@@ -851,6 +851,17 @@ test("an equation whose editor fails to load closes and gives the keyboard back"
 	} finally { FakeField.fail = false; }
 });
 
+test("an equation toggled inside a code span stays text and undoes in one step", async () => {
+	fakeMathLive();
+	const f = await fixture("`ab`");
+	f.select(2);
+	await f.event("keydown", { key: "e", code: "KeyE", ctrlKey: true });
+	await settle();
+	assert.equal(f.value, "`a\\(\\)b`");
+	await f.event("keydown", { key: "z", metaKey: true });
+	assert.equal(f.value, "`ab`");
+});
+
 test("focus that left before the editor mounted stays where it went", async () => {
 	fakeMathLive();
 	const f = await fixture("\\(x\\)");

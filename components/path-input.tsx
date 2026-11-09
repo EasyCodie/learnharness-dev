@@ -114,18 +114,20 @@ export const PathInput = React.forwardRef<HTMLDivElement, PathInputProps>(functi
 		}
 		function openMath(start: number, caret: "start" | "end", before = snapshot()) {
 			const chip = hosts.find((host): host is ChipHost & { latex: string } => "latex" in host && host.start === start);
-			if (!chip) return;
+			if (!chip) return false;
 			if (math) announce(false);
 			math = { host: chip.host, start, source: current.slice(start, mathEnd(chip)), before };
 			typed = "";
 			setActive({ host: chip.host, caret });
 			announce(true);
+			return true;
 		}
 		function insertMath() {
 			const before = snapshot();
 			const { start } = atomicPathRange(current, saved);
 			change(replacePathSelection(current, saved, EMPTY_MATH), false, before);
-			openMath(start, "end", before);
+			// Inside a code span the \(\) stays text and no editor opens to record the undo step on exit.
+			if (!openMath(start, "end", before)) history.push(before);
 		}
 		function toggleEvent() {
 			if (math) { mathExit("after", true); return; }
