@@ -12,7 +12,7 @@ Node 26 (matches CI).
 npm run dev              # Next dev server, http://localhost:3000
 npm run desktop:dev      # Next dev + Electron
 npm test                 # all tests: node:test via tsx, fake providers, no keys needed
-NODE_ENV=test npx tsx --test tests/chat-flow.test.ts   # one test file
+NODE_ENV=test npx tsx --test tests/chat-flow.test.ts   # one test file (tests/path-input.test.tsx also needs --experimental-test-module-mocks)
 npm run typecheck        # tsc --noEmit
 npm run lint             # ESLint, including the layer import rules
 npm run build            # Next production build (standalone output)
