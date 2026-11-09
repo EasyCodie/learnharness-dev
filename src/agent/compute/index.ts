@@ -57,7 +57,7 @@ function startEngine(): Engine {
 		} catch {}
 	};
 	child.on("exit", (code, signal) => {
-		stop(`The compute engine stopped (code ${code ?? "none"}, signal ${signal ?? "none"}).${stderr.trim() ? `\n${stderr.trim()}` : ""}`);
+		stop(`The compute engine stopped (${signal ?? `exit ${code}`}).${stderr.trim() ? `\n${stderr.trim()}` : ""}`);
 	});
 	child.on("error", (error) => stop(`The compute engine failed (${error.message}).`));
 	child.stdin.on("error", (error) => stop(`The compute engine failed (${error.message}).`));

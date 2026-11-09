@@ -48,7 +48,7 @@ def _lh_run(code):
             sys.stderr.flush()
         except Exception:
             pass
-        try:
+        try:  # flush() alone leaves a partial line in Pyodide's line-batched handler; fsync emits it
             os.fsync(1)
         except Exception:
             pass

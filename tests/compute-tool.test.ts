@@ -4,14 +4,14 @@
  * kill/respawn, job ordering, and the sandbox escape attempts that gate it.
  */
 import assert from "node:assert/strict";
-import type { ChildProcess, ChildProcessWithoutNullStreams } from "node:child_process";
+import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { after, describe, it } from "node:test";
 import { runCompute } from "../src/agent/compute/index.ts";
 import { computeTool } from "../src/agent/tools/compute.ts";
 import { toolTimeoutMs } from "../src/agent/tool-execute.ts";
 
-export const engineState = () => (globalThis as { __lhCompute?: { engine: { child: ChildProcessWithoutNullStreams } | null } }).__lhCompute!;
-export async function stopEngine(): Promise<void> {
+const engineState = () => (globalThis as { __lhCompute?: { engine: { child: ChildProcessWithoutNullStreams } | null } }).__lhCompute!;
+async function stopEngine(): Promise<void> {
 	const eng = engineState()?.engine;
 	if (!eng) return;
 	await new Promise<void>((resolve) => {
@@ -111,7 +111,8 @@ describe("compute tool", { timeout: 60_000 }, () => {
 
 	it("a failed write to the engine rejects the call and the next call respawns", async () => {
 		await runCompute("1");
-		engineState().engine!.child.stdin.destroy();
+		// With an error, so the stream emits one: a bare destroy() only ends the engine, which the exit handler already covered.
+		engineState().engine!.child.stdin.destroy(new Error("boom"));
 		await assert.rejects(runCompute("2"), /compute engine (failed|stopped)/);
 		assert.equal(await runCompute("3"), "3");
 	});
