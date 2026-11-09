@@ -45,13 +45,22 @@ function startEngine(): Engine {
 		engine.pending.get(reply.id)?.(reply);
 		engine.pending.delete(reply.id);
 	});
-	child.on("exit", (code, signal) => {
+	let stopped = false;
+	const stop = (text: string): void => {
+		if (stopped) return;
+		stopped = true;
 		if (state.engine === engine) state.engine = null;
-		const text = `The compute engine stopped (${signal ?? `exit ${code}`}).${stderr.trim() ? `\n${stderr.trim()}` : ""}`;
 		for (const settle of engine.pending.values()) settle({ id: -1, ok: false, text });
 		engine.pending.clear();
+		try {
+			if (child.pid) child.kill("SIGKILL");
+		} catch {}
+	};
+	child.on("exit", (code, signal) => {
+		stop(`The compute engine stopped (code ${code ?? "none"}, signal ${signal ?? "none"}).${stderr.trim() ? `\n${stderr.trim()}` : ""}`);
 	});
-	child.on("error", () => undefined); // spawn failures surface through "exit"
+	child.on("error", (error) => stop(`The compute engine failed (${error.message}).`));
+	child.stdin.on("error", (error) => stop(`The compute engine failed (${error.message}).`));
 	hold(engine, false);
 	return engine;
 }

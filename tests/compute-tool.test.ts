@@ -4,10 +4,21 @@
  * kill/respawn, job ordering, and the sandbox escape attempts that gate it.
  */
 import assert from "node:assert/strict";
+import type { ChildProcess, ChildProcessWithoutNullStreams } from "node:child_process";
 import { after, describe, it } from "node:test";
 import { runCompute } from "../src/agent/compute/index.ts";
 import { computeTool } from "../src/agent/tools/compute.ts";
 import { toolTimeoutMs } from "../src/agent/tool-execute.ts";
+
+export const engineState = () => (globalThis as { __lhCompute?: { engine: { child: ChildProcessWithoutNullStreams } | null } }).__lhCompute!;
+export async function stopEngine(): Promise<void> {
+	const eng = engineState()?.engine;
+	if (!eng) return;
+	await new Promise<void>((resolve) => {
+		eng.child.once("exit", () => resolve());
+		eng.child.kill("SIGKILL");
+	});
+}
 
 const exec = (code: string) => computeTool.execute("call-1", { code }, undefined);
 const text = (r: Awaited<ReturnType<typeof exec>>) => (r.content[0] as { text: string }).text;
@@ -96,5 +107,21 @@ describe("compute tool", { timeout: 60_000 }, () => {
 		assert.equal(text(await exec("Matrix([[2, 0], [0, 3]]).eigenvals()")), "{2: 1, 3: 1}");
 		assert.equal(text(await exec("x = Symbol('x')\nseries(exp(x), x, 0, 3)")), "1 + x + x**2/2 + O(x**3)");
 		assert.equal(text(await exec("nsimplify(0.333333333333333)")), "1/3");
+	});
+
+	it("a failed write to the engine rejects the call and the next call respawns", async () => {
+		await runCompute("1");
+		engineState().engine!.child.stdin.destroy();
+		await assert.rejects(runCompute("2"), /compute engine (failed|stopped)/);
+		assert.equal(await runCompute("3"), "3");
+	});
+
+	it("a spawn failure rejects the call", async () => {
+		await stopEngine();
+		const execPath = process.execPath;
+		process.execPath = "/nonexistent/lh-node";
+		try { await assert.rejects(runCompute("1"), /compute engine failed.*ENOENT/); }
+		finally { process.execPath = execPath; }
+		assert.equal(await runCompute("1"), "1");
 	});
 });
