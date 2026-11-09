@@ -25,3 +25,6 @@ docs/superpowers/
 
 # Playwright MCP browser snapshots (local scratch)
 .playwright-mcp/
+
+# Graphify outputs
+graphify-out
