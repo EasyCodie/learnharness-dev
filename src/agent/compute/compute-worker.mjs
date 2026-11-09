@@ -28,7 +28,7 @@ const py = await loadPyodide({
 const wheels = readdirSync(wheelDir).filter((f) => f.endsWith(".whl")).map((f) => wheelDir + f);
 await py.loadPackage(wheels, { messageCallback() {}, errorCallback() {} });
 py.runPython(`
-import ast, json, traceback
+import ast, json, os, sys, traceback
 _lh_base = {"__name__": "__main__"}
 exec("from sympy import *", _lh_base)
 
@@ -42,6 +42,20 @@ def _lh_run(code):
         return json.dumps([True, "" if value is None else repr(value)])
     except BaseException:
         return json.dumps([False, "\\n".join(traceback.format_exc().splitlines()[-20:])])
+    finally:
+        try:
+            sys.stdout.flush()
+            sys.stderr.flush()
+        except Exception:
+            pass
+        try:
+            os.fsync(1)
+        except Exception:
+            pass
+        try:
+            os.fsync(2)
+        except Exception:
+            pass
 `);
 const run = py.globals.get("_lh_run");
 

@@ -124,4 +124,9 @@ describe("compute tool", { timeout: 60_000 }, () => {
 		finally { process.execPath = execPath; }
 		assert.equal(await runCompute("1"), "1");
 	});
+
+	it("output without a trailing newline stays with its own job", async () => {
+		assert.equal(await runCompute("print(9, end='')"), "9\n");
+		assert.equal(await runCompute("print('1/2')"), "1/2\n");
+	});
 });
