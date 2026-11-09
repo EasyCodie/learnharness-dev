@@ -19,7 +19,15 @@ export type MathChipProps = {
  * that KaTeX and the model read, minus empty slots. Empty limits are dropped, so a
  * bare \int is an indefinite integral. */
 export const storableLatex = (latex: string) =>
-	latex.replace(/\\placeholder(?:\[[^\]]*\])?\{\}/g, "").replace(/(?<!\\)[_^]\{\}/g, "");
+	latex.replace(/\\placeholder(?:\[[^\]]*\])?\{\}/g, keepCommandBoundary).replace(/(?<!\\)(?:[_^]\{\})+/g, keepCommandBoundary);
+// A removed slot between a command and a letter leaves a space: \int_{}^{}x must not become \intx.
+const keepCommandBoundary = (slot: string, at: number, latex: string) =>
+	/\\[A-Za-z]+$/.test(latex.slice(0, at)) && /[A-Za-z]/.test(latex[at + slot.length] ?? "") ? " " : "";
+
+/** Reopening: give limitless \int/\sum/\prod their empty limit boxes back (hidden until the caret
+ * lands in one; see MathField). shortcut: a single missing limit is not restored; type _ or ^. */
+export const editableLatex = (latex: string) =>
+	latex.replace(/\\(int|sum|prod)(?![A-Za-z_^])/g, "\\$1_{\\placeholder{}}^{\\placeholder{}}");
 
 export const isMathToggle = (event: KeyboardEvent | React.KeyboardEvent) =>
 	(event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "e";
@@ -83,7 +91,15 @@ function MathField({ latex, caret, onChange, onExit, onReady }: Omit<MathChipPro
 			if (closed) return;
 			const field = new MathfieldElement();
 			field.mathVirtualKeyboardPolicy = "manual";
-			field.value = props.current.latex;
+			field.value = editableLatex(props.current.latex);
+			// Empty boxes are invisible until the caret is on one. MathLive styles no unselected
+			// placeholder, so the symbol itself toggles: while one is selected, all show.
+			const showEmptyBoxes = () => {
+				const symbol = field.getValue(field.selection) === "\\placeholder{}" ? "\u25A2" : "";
+				if (field.placeholderSymbol !== symbol) field.placeholderSymbol = symbol;
+			};
+			showEmptyBoxes();
+			field.addEventListener("selection-change", showEmptyBoxes);
 			field.addEventListener("input", () => props.current.onChange(storableLatex(field.getValue("latex-expanded"))));
 			field.addEventListener("move-out", (event) => {
 				event.preventDefault();

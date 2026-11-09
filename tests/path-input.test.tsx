@@ -10,7 +10,7 @@ import {
 	readPathSelection, renderPathInput, replacePathSelection, restorePathSelection,
 } from "../components/path-input-dom.ts";
 import { quoteFilePath } from "../src/core/file-paths.ts";
-import { storableLatex } from "../components/math-chip.tsx";
+import { editableLatex, storableLatex } from "../components/math-chip.tsx";
 
 function editor() {
 	const { document } = parseHTML("<html><body><div id='editor'></div></body></html>");
@@ -648,5 +648,18 @@ test("equations are stored without MathLive's empty-slot markers or empty limits
 	assert.equal(storableLatex("\\int_{\\placeholder{}}^{\\placeholder{}}\\sqrt{3-\\sin^2x}\\mathrm{d}x"), "\\int\\sqrt{3-\\sin^2x}\\mathrm{d}x");
 	assert.equal(storableLatex("\\sum_{n=1}^{\\placeholder[up]{}}a_n"), "\\sum_{n=1}a_n");
 	assert.equal(storableLatex("\\frac{\\placeholder{}}{2}"), "\\frac{}{2}");
+	// Removing a slot must not glue a command to the letters after it (\\int + xdx ≠ \\intxdx).
+	assert.equal(storableLatex("\\int_{\\placeholder{}}^{\\placeholder{}}xdx"), "\\int xdx");
+	assert.equal(storableLatex("\\alpha\\placeholder{}x"), "\\alpha x");
+	assert.equal(editableLatex(storableLatex("\\int_{\\placeholder{}}^{\\placeholder{}}xdx")), "\\int_{\\placeholder{}}^{\\placeholder{}} xdx");
 	assert.equal(storableLatex("\\{\\}_\\{"), "\\{\\}_\\{");
+});
+
+test("reopened integrals, sums and products get their empty limit boxes back", () => {
+	const empty = "_{\\placeholder{}}^{\\placeholder{}}";
+	assert.equal(editableLatex("\\int\\sqrt{x}\\mathrm{d}x"), `\\int${empty}\\sqrt{x}\\mathrm{d}x`);
+	assert.equal(editableLatex("\\sum a+\\prod b"), `\\sum${empty} a+\\prod${empty} b`);
+	// Existing limits and longer commands are left alone.
+	for (const latex of ["\\int_0^1x", "\\sum^{n}a", "\\intop x", "\\iint f"]) assert.equal(editableLatex(latex), latex);
+	for (const latex of ["\\int\\sqrt{x}\\mathrm{d}x", "\\sum a+\\prod b"]) assert.equal(storableLatex(editableLatex(latex)), latex);
 });
