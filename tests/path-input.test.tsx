@@ -173,7 +173,8 @@ afterEach(async () => { await cleanup?.(); cleanup = undefined; });
 async function fixture(initial: string, singleLine = false) {
 	const { window: win, document: doc } = parseHTML("<html><body><div id='root'></div><button id='elsewhere'></button></body></html>");
 	let active: Element = doc.body;
-	Object.defineProperty(doc, "activeElement", { get: () => active });
+	// Like a browser: focus falls back to the body when the focused element is removed.
+	Object.defineProperty(doc, "activeElement", { get: () => active.isConnected ? active : doc.body });
 	const selection = {
 		anchorNode: null as Node | null, anchorOffset: 0, focusNode: null as Node | null, focusOffset: 0,
 		setBaseAndExtent(anchorNode: Node, anchorOffset: number, focusNode: Node, focusOffset: number) {
@@ -835,4 +836,30 @@ test("clicking an equation while a new empty one is open removes the empty one a
 	await act(async () => { f.root.querySelector('[role="img"][aria-label="y"]')!.dispatchEvent(new f.doc.defaultView!.Event("mousedown", { bubbles: true, cancelable: true })); });
 	await edit(await openField(f), "y2");
 	assert.equal(f.value, "a \\(y2\\)");
+});
+
+test("an equation whose editor fails to load closes and gives the keyboard back", async () => {
+	fakeMathLive();
+	FakeField.fail = true;
+	try {
+		const f = await fixture("a");
+		f.select(1);
+		await f.event("keydown", { key: "e", code: "KeyE", ctrlKey: true });
+		await settle();
+		assert.equal(f.value, "a");
+		assert.equal((await f.event("keydown", { key: "b" })).defaultPrevented, false);
+	} finally { FakeField.fail = false; }
+});
+
+test("focus that left before the editor mounted stays where it went", async () => {
+	fakeMathLive();
+	const f = await fixture("\\(x\\)");
+	f.select(0);
+	await f.event("keydown", { key: "ArrowRight" });
+	await settle();
+	const field = f.root.querySelector(".lh-math-field > *")!;
+	(f.doc.getElementById("elsewhere") as HTMLElement).focus();
+	await act(async () => { field.dispatchEvent(new f.doc.defaultView!.Event("mount")); });
+	assert.equal(f.doc.activeElement!.id, "elsewhere");
+	assert.equal(f.root.querySelector(".lh-math-field"), null);
 });

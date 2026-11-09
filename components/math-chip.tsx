@@ -188,6 +188,10 @@ function MathField({ latex, caret, onChange, onExit, onReady }: Omit<MathChipPro
 			// MathLive ignores focus() until it has mounted (~hundreds of ms on first use).
 			field.addEventListener("mount", () => {
 				if (closed) return;
+				// Mounting can take hundreds of ms: if the learner has focused something else, don't pull
+				// focus back. Focus on the body is not that: it lands there when a previous field closes.
+				const focused = wrap.ownerDocument.activeElement;
+				if (focused && focused !== wrap.ownerDocument.body && !wrap.closest("[data-file-path-input]")?.contains(focused)) return exit("after", false);
 				field.focus();
 				field.position = props.current.caret === "start" ? 0 : field.lastOffset;
 				// The math keyboard opens and closes with the equation (closed in the cleanup below).
@@ -196,9 +200,8 @@ function MathField({ latex, caret, onChange, onExit, onReady }: Omit<MathChipPro
 			}, { once: true });
 			wrap.replaceChildren(field);
 		};
-		if (mathlive) mount(mathlive);
-		// If MathLive cannot load, close the equation rather than leave a dead field eating keys.
-		else void preloadMathLive().then(mount, () => exit("after", true));
+		// If MathLive cannot load or mount, close the equation rather than leave a dead field eating keys.
+		void Promise.resolve(mathlive ?? preloadMathLive()).then(mount).catch(() => exit("after", true));
 		return () => {
 			closed = true;
 			closeKeyboard();
