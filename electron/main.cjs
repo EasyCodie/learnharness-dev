@@ -512,6 +512,12 @@ function setupAutoUpdater() {
 		reportUpdateStatus("disabled");
 		return;
 	}
+	// Builds published with no feed (publish: null) ship no app-update.yml.
+	if (!process.env.LH_UPDATE_FEED && !fs.existsSync(path.join(process.resourcesPath, "app-update.yml"))) {
+		log("auto-update: build has no update feed — updater disabled");
+		reportUpdateStatus("disabled");
+		return;
+	}
 	try {
 		autoUpdater = require("electron-updater").autoUpdater;
 	} catch (err) {
@@ -520,12 +526,6 @@ function setupAutoUpdater() {
 		return;
 	}
 	const feed = process.env.LH_UPDATE_FEED;
-	// Builds published with no feed (publish: null) ship no app-update.yml.
-	if (!feed && !fs.existsSync(path.join(process.resourcesPath, "app-update.yml"))) {
-		log("auto-update: build has no update feed — updater disabled");
-		reportUpdateStatus("disabled");
-		return;
-	}
 	if (feed) {
 		autoUpdater.setFeedURL({ provider: "generic", url: feed });
 		log(`auto-update: LH_UPDATE_FEED override → ${feed}`);
