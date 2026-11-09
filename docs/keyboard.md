@@ -103,6 +103,21 @@ While a select question is expanded and active:
 Text-only questions have no answer-row machine; their answer field uses the
 submission conventions above.
 
+## Equations
+
+Every text box (composer, home, question and practice fields, Thinking while
+reading) accepts inline equations, stored in the text as `\(…\)`.
+
+- **Mod+E** inserts an empty equation at the caret; inside an equation it leaves
+  it. The **Σ** button beside a box's buttons does the same.
+- **Enter** leaves the equation; a second **Enter** submits as usual.
+- **←/→** at an equation's edge step into it; at its inner edge they step out.
+- **↑/↓** move between the limits of ∫, Σ and ∏ (and any sub/superscript).
+- The math keyboard opens and closes with the equation.
+- **Mod+D** does nothing while the caret is in an equation; leave it first.
+  Clicking the mic closes and keeps the equation; dictated text is added at the
+  end of the box, as always.
+
 ## Chains view
 
 - **Mod+F** focuses the chains search while the view is open, rather than the
