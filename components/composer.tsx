@@ -151,6 +151,7 @@ export function Composer({
 	return (
 		<form
 			data-testid="composer"
+			data-math-keyboard-anchor=""
 			className="flex items-end gap-1.5 p-1.5"
 			onSubmit={(e) => {
 				e.preventDefault();

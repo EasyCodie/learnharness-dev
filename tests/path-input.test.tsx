@@ -1,6 +1,6 @@
 import React, { act } from "react";
 import assert from "node:assert/strict";
-import { afterEach, test } from "node:test";
+import { afterEach, mock, test } from "node:test";
 import { parseHTML } from "linkedom";
 import { renderToStaticMarkup } from "react-dom/server";
 import { PathInput, INSERT_FILE_PATHS_EVENT, MATH_STATE_EVENT, TOGGLE_MATH_EVENT } from "../components/path-input.tsx";
@@ -10,7 +10,7 @@ import {
 	readPathSelection, renderPathInput, replacePathSelection, restorePathSelection,
 } from "../components/path-input-dom.ts";
 import { quoteFilePath } from "../src/core/file-paths.ts";
-import { editableLatex, isMathToggle, scriptTarget, storableLatex } from "../components/math-chip.tsx";
+import { closeKeyboard, editableLatex, isMathToggle, openKeyboard, scriptTarget, storableLatex } from "../components/math-chip.tsx";
 
 function editor() {
 	const { document } = parseHTML("<html><body><div id='editor'></div></body></html>");
@@ -718,4 +718,50 @@ test("the Σ button's toggle event inserts an equation at the saved caret and re
 	assert.deepEqual(states, [true, false]);
 	assert.equal(f.value, "a b");
 	assert.equal(f.doc.activeElement, f.root);
+});
+
+test("the math keyboard unfolds in the typing box, above its anchor row, and lingers while it folds", () => {
+	const { window: win, document: doc } = parseHTML(`<html><body>
+		<div id="field"><div>YOUR THINKING</div><div id="input" data-file-path-input=""><span id="eq"></span></div></div>
+		<div id="card"><form id="row" data-math-keyboard-anchor=""><div data-file-path-input=""><span id="eq2"></span></div></form></div>
+	</body></html>`);
+	const calls: string[] = [];
+	const keyboard = { container: null as Element | null, show: () => calls.push("show"), hide: () => calls.push("hide") };
+	const globals = { document: doc, window: Object.assign(win, { mathVirtualKeyboard: keyboard }), requestAnimationFrame: (run: () => void) => run() };
+	const previous = Object.keys(globals).map((name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)] as const);
+	for (const [name, value] of Object.entries(globals)) Object.defineProperty(globalThis, name, { configurable: true, writable: true, value });
+	mock.timers.enable({ apis: ["setTimeout"] });
+	try {
+		// Inner field: directly above the typing line, under the label.
+		openKeyboard(doc.getElementById("eq")!);
+		const slot = doc.getElementById("input")!.previousElementSibling as HTMLElement;
+		assert.equal(slot.className, "lh-math-keyboard");
+		assert.equal(keyboard.container, slot.firstElementChild);
+		assert.equal(slot.dataset.open, "");
+		// Leaving and re-entering an equation in the same box keeps the one keyboard.
+		closeKeyboard();
+		assert.equal(slot.dataset.open, undefined);
+		openKeyboard(doc.getElementById("eq")!);
+		mock.timers.tick(1000);
+		assert.deepEqual(calls, ["show"]);
+		assert.equal(slot.dataset.open, "");
+		// Another box: the old keyboard goes at once; the new one sits above the anchor row.
+		openKeyboard(doc.getElementById("eq2")!);
+		assert.equal(slot.isConnected, false);
+		const row = doc.getElementById("row")!;
+		assert.equal(row.previousElementSibling?.className, "lh-math-keyboard");
+		// Closing folds first and removes the keyboard only after the transition.
+		closeKeyboard();
+		mock.timers.tick(199);
+		assert.equal(row.previousElementSibling?.className, "lh-math-keyboard");
+		mock.timers.tick(1);
+		assert.equal(row.previousElementSibling, null);
+		assert.deepEqual(calls, ["show", "hide", "show", "hide"]);
+	} finally {
+		mock.timers.reset();
+		for (const [name, descriptor] of previous) {
+			if (descriptor) Object.defineProperty(globalThis, name, descriptor);
+			else delete (globalThis as Record<string, unknown>)[name];
+		}
+	}
 });

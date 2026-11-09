@@ -560,11 +560,6 @@ body {
 	max-width: max(0px, calc(100% - 5.5rem - var(--lh-wco-right, 0px)));
 }
 
-/* App roots fill the window above the math keyboard (height set in components/math-chip.tsx). */
-@utility h-app {
-	height: calc(100dvh - var(--math-keyboard-height, 0px));
-}
-
 /* --font-title deliberately NOT @theme inline (see comment above): the
    session-name-serif toggle overrides this var at runtime, so the
    .font-title utility must read it through var(), not carry a baked copy. */
@@ -625,11 +620,94 @@ math-field {
 	--smart-fence-color: var(--muted-foreground);
 }
 math-field:focus-within { outline: 1px solid var(--ring); }
-math-field::part(menu-toggle) { display: none; }
-math-field::part(virtual-keyboard-toggle) {
-	width: 1.25em;
-	height: 1.25em;
-	margin: 0 0 0 0.2em;
-	border-radius: 0.25rem;
-	color: var(--muted-foreground);
+/* No in-field toggles: the keyboard follows the equation, and the Σ button opens/closes it. */
+math-field::part(menu-toggle),
+math-field::part(virtual-keyboard-toggle) { display: none; }
+
+/* Math keyboard: unfolds inside the box being typed in, above its typing line (math-chip.tsx
+   openKeyboard). The box grows and the keys rise in; closing is quicker, with an ease-in. */
+.lh-math-keyboard {
+	height: 0;
+	overflow: hidden;
+	transition: height 200ms cubic-bezier(0.4, 0, 1, 1);
+}
+.lh-math-keyboard[data-open] {
+	/* keys + top margin + bottom padding + divider */
+	height: calc(var(--math-keyboard-height, 0px) + 0.75rem + 1px);
+	transition: height 250ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.lh-math-keyboard > div {
+	box-sizing: content-box;
+	height: var(--math-keyboard-height, 0px);
+	margin: 0.375rem 0.375rem 0;
+	padding-bottom: 0.375rem;
+	border-bottom: 1px solid var(--border);
+	opacity: 0;
+	transform: translateY(8px);
+	transition: opacity 200ms cubic-bezier(0.4, 0, 1, 1), transform 200ms cubic-bezier(0.4, 0, 1, 1);
+}
+.lh-math-keyboard[data-open] > div {
+	opacity: 1;
+	transform: none;
+	transition-duration: 250ms;
+	transition-timing-function: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+/* Keycaps: smaller glyphs (MathLive's are 24-30px), and every glyph centered, including the
+   shift/backspace keys MathLive pins to a corner and the icons it pushes down with a margin.
+   Setting --keycap-font-size also makes MathLive's small sizes valid: they derive from it. */
+.lh-math-keyboard {
+	--keycap-font-size: 18px;
+	--keycap-glyph-size: 16px;
+	--keycap-glyph-size-lg: 18px;
+}
+.lh-math-keyboard .MLK__rows > .MLK__row > div {
+	justify-content: center;
+	align-items: center;
+	padding: 0;
+}
+.lh-math-keyboard .MLK__rows > .MLK__row > div svg { margin: 0; }
+/* A closing keyboard belongs to an equation that already closed: its keys must not type. */
+.lh-math-keyboard:not([data-open]) .MLK__plate { pointer-events: none; }
+@media (prefers-reduced-motion: reduce) {
+	/* Fade only: the box snaps open, and snaps shut after the keys have faded. */
+	.lh-math-keyboard { transition: height 0s 200ms; }
+	.lh-math-keyboard[data-open] { transition: none; }
+	.lh-math-keyboard > div { transform: none; }
+}
+/* MathLive's keyboard in the app palette. On :root so its long-press variants panel matches too. */
+:root {
+	--keyboard-background: transparent;
+	--keyboard-padding-top: 0px;
+	--keyboard-padding-bottom: 0px;
+	--keyboard-padding-horizontal: 0px;
+	--keyboard-accent-color: var(--foreground);
+	--keyboard-horizontal-rule: 1px solid var(--border);
+	--keyboard-toolbar-text: var(--muted-foreground);
+	--keyboard-toolbar-text-active: var(--foreground);
+	--keyboard-toolbar-background-hover: var(--accent);
+	--keyboard-toolbar-background-selected: transparent;
+	--keycap-background: var(--accent);
+	--keycap-background-hover: color-mix(in oklab, var(--accent), var(--foreground) 8%);
+	--keycap-background-active: color-mix(in oklab, var(--accent), var(--foreground) 14%);
+	--keycap-background-pressed: color-mix(in oklab, var(--accent), var(--foreground) 14%);
+	--keycap-border: transparent;
+	--keycap-border-bottom: transparent;
+	--keycap-text: var(--foreground);
+	--keycap-text-active: var(--foreground);
+	--keycap-text-hover: var(--foreground);
+	--keycap-text-pressed: var(--foreground);
+	--keycap-secondary-background: color-mix(in oklab, var(--accent), var(--foreground) 6%);
+	--keycap-secondary-background-hover: color-mix(in oklab, var(--accent), var(--foreground) 12%);
+	--keycap-secondary-text: var(--foreground);
+	--keycap-secondary-border: transparent;
+	--keycap-secondary-border-bottom: transparent;
+	--keycap-primary-background: var(--primary);
+	--keycap-primary-background-hover: color-mix(in oklab, var(--primary), var(--background) 12%);
+	--keycap-primary-text: var(--primary-foreground);
+	--keycap-shift-color: var(--muted-foreground);
+	--keycap-shift-text: var(--muted-foreground);
+	--variant-panel-background: var(--popover);
+	--variant-keycap-text: var(--popover-foreground);
+	--variant-keycap-text-active: var(--foreground);
+	--variant-keycap-background-active: var(--accent);
 }

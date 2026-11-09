@@ -71,7 +71,7 @@ export function preloadMathLive() {
 		module.MathfieldElement.fontsDirectory = null;
 		module.MathfieldElement.soundsDirectory = null;
 		if (!mathlive) {
-			// The keyboard is fixed over the window bottom: publish its height so the app shrinks above it (.h-app).
+			// Publish the keyboard's height: .lh-math-keyboard unfolds to fit it.
 			const keyboard = window.mathVirtualKeyboard;
 			// No "abc" tab: learners type letters on their physical keyboard.
 			keyboard.layouts = ["numeric", "symbols", "greek"];
@@ -80,6 +80,52 @@ export function preloadMathLive() {
 		}
 		return (mathlive = module);
 	});
+}
+
+/* The keyboard unfolds inside the box being typed in, just above its typing line: before the
+ * PathInput, or before the [data-math-keyboard-anchor] row that holds it. One keyboard app-wide. */
+const KEYBOARD_CLOSE_MS = 200; // .lh-math-keyboard's closing transition (globals.css)
+type KeyboardDock = { slot: HTMLElement; anchor: Element; closing?: ReturnType<typeof setTimeout> };
+let dock: KeyboardDock | null = null;
+
+export function openKeyboard(from: Element) {
+	const anchor = from.closest("[data-math-keyboard-anchor]") ?? from.closest("[data-file-path-input]");
+	if (!anchor) return;
+	// Same box while it is still closing (stepping to the next equation): just unfold again.
+	if (dock?.anchor !== anchor || !dock.slot.isConnected) {
+		if (dock) closeKeyboardNow();
+		const slot = document.createElement("div");
+		slot.className = "lh-math-keyboard";
+		const keys = slot.appendChild(document.createElement("div"));
+		anchor.before(slot);
+		window.mathVirtualKeyboard.container = keys;
+		window.mathVirtualKeyboard.show();
+		const opening: KeyboardDock = dock = { slot, anchor };
+		// Unfold after the built keyboard has painted: building it blocks the main thread for
+		// ~250ms, which would otherwise swallow the whole transition.
+		requestAnimationFrame(() => requestAnimationFrame(() => {
+			if (dock === opening && opening.closing === undefined) slot.dataset.open = "";
+		}));
+		return;
+	}
+	clearTimeout(dock.closing);
+	dock.closing = undefined;
+	dock.slot.dataset.open = "";
+}
+
+export function closeKeyboard() {
+	if (!dock) return;
+	delete dock.slot.dataset.open;
+	clearTimeout(dock.closing);
+	dock.closing = setTimeout(closeKeyboardNow, KEYBOARD_CLOSE_MS);
+}
+
+function closeKeyboardNow() {
+	if (!dock) return;
+	clearTimeout(dock.closing);
+	window.mathVirtualKeyboard.hide();
+	dock.slot.remove();
+	dock = null;
 }
 
 // Events the outer plaintext editor must never see while the field owns input.
@@ -145,7 +191,7 @@ function MathField({ latex, caret, onChange, onExit, onReady }: Omit<MathChipPro
 				field.focus();
 				field.position = props.current.caret === "start" ? 0 : field.lastOffset;
 				// The math keyboard opens and closes with the equation (closed in the cleanup below).
-				window.mathVirtualKeyboard.show();
+				openKeyboard(wrap);
 				props.current.onReady(field);
 			}, { once: true });
 			wrap.replaceChildren(field);
@@ -155,7 +201,7 @@ function MathField({ latex, caret, onChange, onExit, onReady }: Omit<MathChipPro
 		else void preloadMathLive().then(mount, () => exit("after", true));
 		return () => {
 			closed = true;
-			window.mathVirtualKeyboard?.hide();
+			closeKeyboard();
 			wrap.removeEventListener("keydown", intercept, true);
 			for (const type of ISOLATED) wrap.removeEventListener(type, stop);
 		};

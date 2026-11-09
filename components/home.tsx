@@ -159,7 +159,7 @@ export function Home({
 	};
 
 	return (
-		<div className="relative h-app">
+		<div className="relative h-dvh">
 			{/* Window-drag strip (merged chrome, owner 2026-09-17): a dedicated
 			    mask element, deliberately FIRST in the DOM. Electron's app-region
 			    mask resolves by DOM order — a no-drag element subtracts only drag
@@ -246,12 +246,14 @@ export function Home({
 					{startError && <p role="alert" className="mb-2 text-sm text-destructive">{OPENING_PROMPT_FAILURE}</p>}
 					<form
 						data-attachment-composer=""
-						className="flex items-end gap-1.5 rounded-2xl border bg-card p-1.5 shadow-lg"
+						className="overflow-hidden rounded-2xl border bg-card shadow-lg"
 					onSubmit={(e) => {
 						e.preventDefault();
 						void start();
 					}}
 				>
+					{/* The row is the math keyboard's anchor: it unfolds above it, inside the card. */}
+					<div data-math-keyboard-anchor="" className="flex items-end gap-1.5 p-1.5">
 					<PathInput
 						ref={topicInputRef}
 						value={topic}
@@ -291,6 +293,7 @@ export function Home({
 					>
 						<CornerDownLeftIcon className="size-5" />
 					</button>
+					</div>
 					</form>
 					{/* Same as the chat view's under-composer stats bar (owner) — no
 					    session yet, so the LEFT side renders nothing (wave 7 sweep)

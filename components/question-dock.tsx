@@ -673,6 +673,8 @@ function QuestionDockForm({
 								role={qd.mode === "multi-select" ? "checkbox" : "radio"}
 								aria-checked={sel.otherSelected}
 								data-testid="other-option"
+								// The math keyboard unfolds above this row: inside it, every key press would select it.
+								data-math-keyboard-anchor=""
 								data-kbdrow={optionCount}
 								onClick={selectOther}
 								className={cn(
