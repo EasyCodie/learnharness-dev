@@ -15,6 +15,12 @@ export type MathChipProps = {
 	onExit: (side: MathExit, refocus: boolean) => void;
 };
 
+/** Input is MathLive's "latex-expanded" output: standard LaTeX (\differentialD → \mathrm{d})
+ * that KaTeX and the model read, minus empty slots. Empty limits are dropped, so a
+ * bare \int is an indefinite integral. */
+export const storableLatex = (latex: string) =>
+	latex.replace(/\\placeholder(?:\[[^\]]*\])?\{\}/g, "").replace(/(?<!\\)[_^]\{\}/g, "");
+
 export const isMathToggle = (event: KeyboardEvent | React.KeyboardEvent) =>
 	(event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "e";
 
@@ -78,7 +84,7 @@ function MathField({ latex, caret, onChange, onExit, onReady }: Omit<MathChipPro
 			const field = new MathfieldElement();
 			field.mathVirtualKeyboardPolicy = "manual";
 			field.value = props.current.latex;
-			field.addEventListener("input", () => props.current.onChange(field.value));
+			field.addEventListener("input", () => props.current.onChange(storableLatex(field.getValue("latex-expanded"))));
 			field.addEventListener("move-out", (event) => {
 				event.preventDefault();
 				exit(event.detail.direction === "backward" || event.detail.direction === "upward" ? "before" : "after", true);

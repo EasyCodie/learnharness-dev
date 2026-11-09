@@ -10,6 +10,7 @@ import {
 	readPathSelection, renderPathInput, replacePathSelection, restorePathSelection,
 } from "../components/path-input-dom.ts";
 import { quoteFilePath } from "../src/core/file-paths.ts";
+import { storableLatex } from "../components/math-chip.tsx";
 
 function editor() {
 	const { document } = parseHTML("<html><body><div id='editor'></div></body></html>");
@@ -639,4 +640,13 @@ test("\\(…\\) equations are atomic chips: lossless DOM, whole-token delete and
 	const end = 3 + "\\(\\frac12\\)".length;
 	assert.deepEqual(adjacentPathRange(value, { anchor: end, focus: end }, "backward"), { anchor: 3, focus: end });
 	assert.deepEqual(atomicPathRange(value, { anchor: 5, focus: end + 2 }), { start: 3, end: end + 2 });
+});
+
+test("equations are stored without MathLive's empty-slot markers or empty limits", () => {
+	// An integral left with empty limits is indefinite; KaTeX cannot render \\placeholder.
+	// Input is MathLive's "latex-expanded" output, which keeps \\placeholder.
+	assert.equal(storableLatex("\\int_{\\placeholder{}}^{\\placeholder{}}\\sqrt{3-\\sin^2x}\\mathrm{d}x"), "\\int\\sqrt{3-\\sin^2x}\\mathrm{d}x");
+	assert.equal(storableLatex("\\sum_{n=1}^{\\placeholder[up]{}}a_n"), "\\sum_{n=1}a_n");
+	assert.equal(storableLatex("\\frac{\\placeholder{}}{2}"), "\\frac{}{2}");
+	assert.equal(storableLatex("\\{\\}_\\{"), "\\{\\}_\\{");
 });
