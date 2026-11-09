@@ -11,7 +11,7 @@ import { createInterface } from "node:readline";
 
 const OUTPUT_CAP = 4000;
 
-type Reply = { id: number; ok: boolean; text: string };
+type Reply = { id: number; ok: boolean; text: string; fatal?: true };
 interface Engine {
 	child: ChildProcessWithoutNullStreams;
 	pending: Map<number, (reply: Reply) => void>;
@@ -42,6 +42,8 @@ function startEngine(): Engine {
 	createInterface({ input: child.stdout }).on("line", (line) => {
 		let reply: Reply;
 		try { reply = JSON.parse(line); } catch { return; }
+		// Detach before settling, so the job queued behind a fatal error spawns a fresh engine.
+		if (reply.fatal && state.engine === engine) state.engine = null;
 		engine.pending.get(reply.id)?.(reply);
 		engine.pending.delete(reply.id);
 	});
@@ -100,6 +102,11 @@ function execute(code: string, signal?: AbortSignal): Promise<string> {
 		});
 		engine.child.stdin.write(`${JSON.stringify({ id, code })}\n`);
 	});
+}
+
+/** Start the engine ahead of the first call (loading Pyodide and SymPy takes seconds). */
+export function warmCompute(): void {
+	state.engine ??= startEngine();
 }
 
 /** Run Python (SymPy preloaded) in the sandbox. Resolves with printed output

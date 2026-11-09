@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { after, describe, it } from "node:test";
-import { runCompute } from "../src/agent/compute/index.ts";
+import { runCompute, warmCompute } from "../src/agent/compute/index.ts";
 import { computeTool } from "../src/agent/tools/compute.ts";
 import { toolTimeoutMs } from "../src/agent/tool-execute.ts";
 
@@ -139,5 +139,23 @@ describe("compute tool", { timeout: 60_000 }, () => {
 		assert.notEqual(await runCompute("import random\nrandom.random()"), "0.13436424411240122");
 		assert.equal(await runCompute("x = Symbol('x')\nx + x"), "2*x");
 		assert.equal(await runCompute("print('seen')"), "seen\n");
+	});
+
+	it("a fatal Pyodide error restarts the engine", async () => {
+		await runCompute("1");
+		const pid = engineState().engine!.child.pid;
+		const fatal = runCompute("import pyodide_js\npyodide_js._api.fatal_error(Exception('boom'))");
+		const next = runCompute("1"); // queued behind it: must not reach the dying engine
+		await assert.rejects(fatal, /compute engine failed/);
+		assert.equal(await next, "1");
+		assert.notEqual(engineState().engine!.child.pid, pid);
+	});
+
+	it("warmCompute starts the engine the next call reuses", async () => {
+		await stopEngine();
+		warmCompute();
+		const pid = engineState().engine!.child.pid;
+		assert.equal(await runCompute("1"), "1");
+		assert.equal(engineState().engine!.child.pid, pid);
 	});
 });

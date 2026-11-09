@@ -104,15 +104,21 @@ const reply = (message) => process.stdout.write(`${JSON.stringify(message)}\n`);
 // Jobs sent while loading wait in stdin's buffer. stdin closing (the server
 // went away) ends this loop and the process.
 for await (const line of createInterface({ input: process.stdin })) {
-	let id = null;
-	try {
-		const job = JSON.parse(line);
-		id = job.id;
-		printed = "";
-		const [ok, value] = JSON.parse(run(job.code));
-		reply({ id, ok, text: ok ? printed + value : value });
-	} catch (error) {
-		reply({ id, ok: false, text: String(error?.message ?? error) });
+	let job;
+	try { job = JSON.parse(line); }
+	catch (error) { reply({ id: null, ok: false, text: String(error?.message ?? error) }); continue; }
+	printed = "";
+	let result;
+	try { result = run(job.code); }
+	catch (error) { result = error; }
+	if (typeof result !== "string") {
+		// _lh_run catches every Python exception, so this is Pyodide itself failing: the
+		// interpreter can't be trusted again. Exit once the reply has flushed; the host respawns.
+		const fatal = { id: job.id, ok: false, fatal: true, text: `The compute engine failed and is restarting: ${result?.message ?? result}` };
+		await new Promise((done) => process.stdout.write(`${JSON.stringify(fatal)}\n`, done));
+		process.exit(1);
 	}
+	const [ok, value] = JSON.parse(result);
+	reply({ id: job.id, ok, text: ok ? printed + value : value });
 }
 process.exit(0);
