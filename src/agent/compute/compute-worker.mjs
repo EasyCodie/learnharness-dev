@@ -45,21 +45,30 @@ def _lh_run(code):
 `);
 const run = py.globals.get("_lh_run");
 
-// Lock down only now: Pyodide itself imports node:vm while loading. Python can
-// reach the JS Function constructor through any proxy, so the network and
-// process modules must be unreachable from JS, not just hidden from Python.
-const DENIED = /^(node:)?(net|http|https|http2|tls|dgram|dns|dns\/promises|child_process|worker_threads|cluster|inspector|undici)$/;
+// Lock down only now: Pyodide itself imports node:vm while loading. After load,
+// allow no further module loads and disable socket connect so neither Python
+// proxies nor JS escapes can reach the network or host system.
+const ALLOWED = new Set([]);
 registerHooks({
 	resolve(specifier, context, next) {
-		if (DENIED.test(specifier)) throw new Error(`${specifier} is disabled in compute`);
+		const bare = specifier.startsWith("node:") ? specifier.slice(5) : specifier;
+		if (!ALLOWED.has(bare)) throw new Error(`${specifier} is disabled in compute`);
 		return next(specifier, context);
 	},
 });
 const getBuiltinModule = process.getBuiltinModule.bind(process);
 process.getBuiltinModule = (id) => {
-	if (DENIED.test(id)) throw new Error(`${id} is disabled in compute`);
+	const bare = id.startsWith("node:") ? id.slice(5) : id;
+	if (!ALLOWED.has(bare)) throw new Error(`${id} is disabled in compute`);
 	return getBuiltinModule(id);
 };
+for (const stream of [process.stdout, process.stdin]) {
+	for (let proto = stream; proto != null; proto = Object.getPrototypeOf(proto)) {
+		if (Object.hasOwn(proto, "connect")) {
+			proto.connect = () => { throw new Error("net.Socket.connect is disabled in compute"); };
+		}
+	}
+}
 process._linkedBinding = () => { throw new Error("process._linkedBinding is disabled"); };
 for (const name of ["fetch", "WebSocket", "EventSource", "XMLHttpRequest"]) delete globalThis[name];
 

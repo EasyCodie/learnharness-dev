@@ -72,10 +72,29 @@ describe("compute tool", { timeout: 60_000 }, () => {
 			"import pyodide_js\npyodide_js.FS.mkdir('/h')\npyodide_js.FS.mount(pyodide_js.FS.filesystems.NODEFS, {'root': '/'}, '/h')\npyodide_js.FS.readdir('/h')",
 		];
 		for (const code of blocked) await assert.rejects(exec(code), Error, code);
+		const lockdown = [
+			viaJs("return typeof process.getBuiltinModule('_http_client').ClientRequest"),
+			viaJs("return typeof process.getBuiltinModule('_tls_wrap').connect"),
+			viaJs("return typeof process.getBuiltinModule('node:_http_agent').Agent"),
+			viaJs("return typeof process.getBuiltinModule('module').registerHooks"),
+			viaJs("const s = new (process.stdout.constructor)(); s.on('error', () => {}); s.connect(9, '127.0.0.1'); return 'connected'"),
+			viaJs("const s = new (process.stdin.constructor)(); s.on('error', () => {}); s.connect(9, '127.0.0.1'); return 'connected'"),
+		];
+		for (const code of lockdown) await assert.rejects(exec(code), /disabled in compute/, code);
 		// macOS injects __CF_USER_TEXT_ENCODING into every process; nothing else may arrive.
 		assert.equal(text(await exec(viaJs("return Object.keys(process.env).filter(k => !['ELECTRON_RUN_AS_NODE', '__CF_USER_TEXT_ENCODING'].includes(k)).join()"))), "''", "no env reaches the sandbox");
 		// Dynamic import settles asynchronously; JS globals outlive the call, so read the outcome on the next one.
 		await exec(viaJs("globalThis.probe = 'pending'; import('node:net').then(() => { globalThis.probe = 'loaded' }, () => { globalThis.probe = 'blocked' })"));
 		assert.equal(text(await exec(viaJs("return globalThis.probe"))), "'blocked'");
+		await exec(viaJs("globalThis.probe = 'pending'; import('node:_http_client').then(() => { globalThis.probe = 'loaded' }, () => { globalThis.probe = 'blocked' })"));
+		assert.equal(text(await exec(viaJs("return globalThis.probe"))), "'blocked'");
+	});
+
+	it("still runs common SymPy checks after lockdown", async () => {
+		assert.equal(text(await exec("x = Symbol('x')\nsolve(x**2 - 4, x)")), "[-2, 2]");
+		assert.equal(text(await exec("x = Symbol('x')\nlimit(sin(x)/x, x, 0)")), "1");
+		assert.equal(text(await exec("Matrix([[2, 0], [0, 3]]).eigenvals()")), "{2: 1, 3: 1}");
+		assert.equal(text(await exec("x = Symbol('x')\nseries(exp(x), x, 0, 3)")), "1 + x + x**2/2 + O(x**3)");
+		assert.equal(text(await exec("nsimplify(0.333333333333333)")), "1/3");
 	});
 });
