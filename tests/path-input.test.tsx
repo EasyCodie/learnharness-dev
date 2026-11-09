@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
 import { parseHTML } from "linkedom";
 import { renderToStaticMarkup } from "react-dom/server";
-import { PathInput, INSERT_FILE_PATHS_EVENT } from "../components/path-input.tsx";
+import { PathInput, INSERT_FILE_PATHS_EVENT, MATH_STATE_EVENT, TOGGLE_MATH_EVENT } from "../components/path-input.tsx";
 import {
 	PATH_CARET_ATTRIBUTE, PATH_SOURCE_ATTRIBUTE, PathInputHistory, adjacentPathRange, atomicPathRange,
 	insertFilePaths, normalizePathEdit, normalizePathInputValue, pathInputOffset, pathInputPoint, pathInputStaticRange, readPathInput,
@@ -164,7 +164,7 @@ async function fixture(initial: string, singleLine = false) {
 	Object.assign(doc, { getSelection: () => selection, oninput: null });
 	win.HTMLElement.prototype.focus = function () { active = this; };
 	const previous = new Map<string, PropertyDescriptor | undefined>();
-	for (const [name, value] of Object.entries({ React, window: win, document: doc, HTMLElement: win.HTMLElement, Element: win.Element, Event: win.Event, IS_REACT_ACT_ENVIRONMENT: true })) {
+	for (const [name, value] of Object.entries({ React, window: win, document: doc, HTMLElement: win.HTMLElement, Element: win.Element, Event: win.Event, CustomEvent: win.CustomEvent, IS_REACT_ACT_ENVIRONMENT: true })) {
 		previous.set(name, Object.getOwnPropertyDescriptor(globalThis, name));
 		Object.defineProperty(globalThis, name, { configurable: true, writable: true, value });
 	}
@@ -701,4 +701,21 @@ test("Mod+E toggles an equation on any keyboard layout, and only without extra m
 	assert.equal(isMathToggle(key({ key: "E", code: "KeyE", metaKey: true, shiftKey: true })), false);
 	assert.equal(isMathToggle(key({ key: "´", code: "KeyE", metaKey: true, altKey: true })), false);
 	assert.equal(isMathToggle(key({ key: "e", code: "KeyE" })), false);
+});
+
+test("the Σ button's toggle event inserts an equation at the saved caret and reports it open", async () => {
+	const f = await fixture("a b");
+	const states: boolean[] = [];
+	f.root.addEventListener(MATH_STATE_EVENT, (event) => states.push((event as CustomEvent<{ open: boolean }>).detail.open));
+	f.select(1);
+	f.doc.getElementById("elsewhere")!.focus(); // the button click took focus away
+	await f.event(TOGGLE_MATH_EVENT);
+	assert.equal(f.writes[0], "a\\(\\) b");
+	assert.equal(states[0], true);
+	assert.equal(f.keys, 0, "toggling must not submit");
+	// MathLive cannot load under linkedom: the equation closes instead of leaving a dead
+	// field, the empty equation leaves no trace, and the box keeps focus.
+	assert.deepEqual(states, [true, false]);
+	assert.equal(f.value, "a b");
+	assert.equal(f.doc.activeElement, f.root);
 });

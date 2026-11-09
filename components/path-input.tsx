@@ -14,6 +14,10 @@ import {
 } from "./path-input-dom";
 
 export const INSERT_FILE_PATHS_EVENT = "lh:insert-file-paths";
+/** Dispatched ON a PathInput root (the Σ button): insert an equation at the caret, or leave the open one. */
+export const TOGGLE_MATH_EVENT = "lh:toggle-math";
+/** Bubbles FROM a PathInput root whenever an equation opens or closes; detail: { open }. */
+export const MATH_STATE_EVENT = "lh:math-state";
 export type PathInputProps = Omit<React.HTMLAttributes<HTMLDivElement>, "children" | "dangerouslySetInnerHTML" | "defaultValue" | "onChange"> & {
 	value: string;
 	onValueChange: (value: string) => void;
@@ -84,7 +88,11 @@ export const PathInput = React.forwardRef<HTMLDivElement, PathInputProps>(functi
 		function snapshot(): PathEditSnapshot {
 			return { value: current, selection: { ...saved } };
 		}
+		function announce(open: boolean) {
+			root.dispatchEvent(new CustomEvent(MATH_STATE_EVENT, { bubbles: true, detail: { open } }));
+		}
 		function paint(selection: TextSelection, restore: boolean) {
+			if (math) announce(false);
 			math = null;
 			setActive(null);
 			hosts = renderPathInput(root, current);
@@ -107,9 +115,24 @@ export const PathInput = React.forwardRef<HTMLDivElement, PathInputProps>(functi
 		function openMath(start: number, caret: "start" | "end", before = snapshot()) {
 			const chip = hosts.find((host): host is ChipHost & { latex: string } => "latex" in host && host.start === start);
 			if (!chip) return;
+			if (math) announce(false);
 			math = { host: chip.host, start, source: current.slice(start, mathEnd(chip)), before };
 			typed = "";
 			setActive({ host: chip.host, caret });
+			announce(true);
+		}
+		function insertMath() {
+			const before = snapshot();
+			const { start } = atomicPathRange(current, saved);
+			change(replacePathSelection(current, saved, EMPTY_MATH), false, before);
+			openMath(start, "end", before);
+		}
+		function toggleEvent() {
+			if (math) { mathExit("after", true); return; }
+			// The click moved focus to the button: return to the caret the box remembers.
+			root.focus();
+			restorePathSelection(root, saved);
+			insertMath();
 		}
 		function mathChange(latex: string) {
 			if (!math) return;
@@ -218,10 +241,7 @@ export const PathInput = React.forwardRef<HTMLDivElement, PathInputProps>(functi
 			const collapsed = saved.anchor === saved.focus;
 			if (isMathToggle(event)) {
 				event.preventDefault();
-				const before = snapshot();
-				const { start } = atomicPathRange(current, saved);
-				change(replacePathSelection(current, saved, EMPTY_MATH), false, before);
-				openMath(start, "end", before);
+				insertMath();
 			} else if ((event.key === "ArrowRight" || event.key === "ArrowLeft") && collapsed
 				&& !event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey) {
 				const forward = event.key === "ArrowRight";
@@ -319,6 +339,7 @@ export const PathInput = React.forwardRef<HTMLDivElement, PathInputProps>(functi
 		paint(saved, false);
 		if (initial.current.autoFocus) { root.focus(); restorePathSelection(root, saved); }
 		root.addEventListener(INSERT_FILE_PATHS_EVENT, insertEvent);
+		root.addEventListener(TOGGLE_MATH_EVENT, toggleEvent);
 		root.addEventListener("beforeinput", beforeInput);
 		root.addEventListener("input", input);
 		root.addEventListener("keydown", keyDown);
@@ -333,6 +354,7 @@ export const PathInput = React.forwardRef<HTMLDivElement, PathInputProps>(functi
 			composing.current = false;
 			controllerRef.current = null;
 			root.removeEventListener(INSERT_FILE_PATHS_EVENT, insertEvent);
+			root.removeEventListener(TOGGLE_MATH_EVENT, toggleEvent);
 			root.removeEventListener("beforeinput", beforeInput);
 			root.removeEventListener("input", input);
 			root.removeEventListener("keydown", keyDown);

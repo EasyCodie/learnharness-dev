@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { finishDictation, isDictationActive, joinDictation, useDictationTarget } from "@/components/dictation";
 import { useEnterSubmits } from "@/components/enter-submits";
 import { PathInput } from "@/components/path-input";
+import { MathToggleButton } from "@/components/math-toggle-button";
 import { MalformedQuestion } from "@/components/malformed-question";
 import { ToolContentResponse } from "@/components/ai-elements/message";
 import { cn } from "@/lib/utils";
@@ -439,6 +440,7 @@ function QuestionDockForm({
 	const rootRef = useRef<HTMLDivElement>(null);
 	const otherInputRef = useRef<HTMLDivElement>(null);
 	const thinkingRef = useRef<HTMLDivElement>(null);
+	const answerRef = useRef<HTMLDivElement>(null);
 	// One row past the options is the trailing row: quiz → don't-know,
 	// ask → Other (a question never has both). Text mode (ask/explain)
 	// has no rows — the composer IS the answer surface.
@@ -851,6 +853,7 @@ function QuestionDockForm({
 					</div>
 					{qd.mode === "text" ? (
 						<PathInput
+							ref={answerRef}
 							value={text}
 							onValueChange={(value) => {
 								answerTextRef.current = value;
@@ -915,10 +918,11 @@ function QuestionDockForm({
 						<span aria-hidden className="pl-1.5 text-xs text-muted-foreground">
 								{compactionRunning ? "compacting session…" : "↵ submits · ⇧↵ newline"}
 						</span>
+						<MathToggleButton editorRef={qd.mode === "text" ? answerRef : thinkingRef} className="ml-auto size-9 rounded-[6px]" />
 						<Button
 							type="submit"
 							disabled={!canSubmit || compactionRunning}
-							className="ml-auto h-9 rounded-[6px] px-3.5 text-sm font-medium"
+							className="h-9 rounded-[6px] px-3.5 text-sm font-medium"
 						>
 							Submit answer
 						</Button>
