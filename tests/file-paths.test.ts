@@ -162,4 +162,15 @@ describe("parseLearnerText", () => {
 		assert.deepEqual(parts.flatMap((part) => part.kind === "math" ? [part.latex] : []), ["\\frac{a}{b}", ""]);
 		assert.deepEqual(parts.map((part) => part.kind), ["text", "math", "text", "math", "text", "path", "text"]);
 	});
+
+	it("leaves \\(…\\) inside inline code as text", () => {
+		const text = "run `sed 's/\\(a\\)/\\1/'` then \\(x\\) and `\\(y\\)` `/a/b.pdf`";
+		const parts = parseLearnerText(text);
+		assert.equal(parts.map((part) => part.text).join(""), text);
+		assert.deepEqual(parts.flatMap((part) => part.kind === "math" ? [part.latex] : []), ["x"]);
+		assert.ok(parts.some((part) => part.kind === "path"));
+		// A path chip between two code spans must not pair their backticks around the equation.
+		const between = parseLearnerText("`/a/b.pdf` so \\(z\\) or `q`");
+		assert.deepEqual(between.flatMap((part) => part.kind === "math" ? [part.latex] : []), ["z"]);
+	});
 });
