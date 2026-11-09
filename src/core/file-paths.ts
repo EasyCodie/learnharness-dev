@@ -101,3 +101,23 @@ export function filePathLabel(path: string): string {
 	if (!trimmed || (windows && /^[a-z]:$/i.test(trimmed)) || trimmed === "~") return path;
 	return trimmed.split(separator).at(-1) || path;
 }
+
+/** Learner equations are stored as `\(latex\)`: dollar signs stay literal prose (currency). */
+export type LearnerTextPart = FilePathPart | { kind: "math"; text: string; latex: string; start: number; end: number };
+
+/** parseFilePaths plus inline `\(…\)` math in the text parts; still lossless. */
+export function parseLearnerText(text: string): LearnerTextPart[] {
+	return parseFilePaths(text).flatMap((part): LearnerTextPart[] => {
+		if (part.kind !== "text") return [part];
+		const parts: LearnerTextPart[] = [];
+		let plain = 0;
+		for (const match of part.text.matchAll(/\\\(([^\n]*?)\\\)/g)) {
+			const start = part.start + match.index, end = start + match[0].length;
+			if (plain < match.index) parts.push({ kind: "text", text: part.text.slice(plain, match.index), start: part.start + plain, end: start });
+			parts.push({ kind: "math", text: match[0], latex: match[1]!, start, end });
+			plain = match.index + match[0].length;
+		}
+		if (plain < part.text.length) parts.push({ kind: "text", text: part.text.slice(plain), start: part.start + plain, end: part.end });
+		return parts;
+	});
+}

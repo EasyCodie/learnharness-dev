@@ -2,13 +2,15 @@
 
 import * as React from "react";
 import { createPortal } from "react-dom";
+import type { MathfieldElement } from "mathlive";
 import { FilePathChip } from "./file-path-chip";
+import { isMathToggle, MathChip, preloadMathLive, type MathExit } from "./math-chip";
 import { cn } from "../lib/utils";
 import {
-	adjacentPathRange, atomicPathRange, clampPathSelection, insertFilePaths,
+	adjacentPathRange, atomicPathRange, clampPathSelection, insertFilePaths, PATH_SOURCE_ATTRIBUTE,
 	normalizePathEdit, normalizePathInputValue, pathInputStaticRange, PathInputHistory, readPathInput, readPathSelection, renderPathInput,
 	replacePathSelection, restorePathSelection,
-	type PathEditSnapshot, type TextSelection,
+	type ChipHost, type PathEditSnapshot, type TextSelection,
 } from "./path-input-dom";
 
 export const INSERT_FILE_PATHS_EVENT = "lh:insert-file-paths";
@@ -22,11 +24,18 @@ export type PathInputProps = Omit<React.HTMLAttributes<HTMLDivElement>, "childre
 	singleLine?: boolean;
 };
 
-type ChipHost = { host: HTMLElement; path: string };
 type Controller = {
 	external: (value: string) => void;
 	remember: () => void;
+	openMath: (start: number, caret: "start" | "end") => void;
+	mathChange: (latex: string) => void;
+	mathExit: (side: MathExit, refocus: boolean) => void;
+	mathReady: (field: MathfieldElement) => void;
 };
+const typeInto = (field: MathfieldElement, text: string) =>
+	field.executeCommand(["typedText", text, { focus: true, feedback: false, simulateKeystroke: true }]);
+const EMPTY_MATH = "\\(\\)";
+const mathEnd = (chip: ChipHost & { latex: string }) => chip.start + chip.latex.length + EMPTY_MATH.length;
 
 /**
  * A controlled plaintext editor. Only the source string is state; chips are atomic
@@ -42,6 +51,7 @@ export const PathInput = React.forwardRef<HTMLDivElement, PathInputProps>(functi
 	const callbacks = React.useRef({ onValueChange, singleLine });
 	const composing = React.useRef(false);
 	const [chips, setChips] = React.useState<ChipHost[]>([]);
+	const [active, setActive] = React.useState<{ host: HTMLElement; caret: "start" | "end" } | null>(null);
 	// Keep this text child immutable: SSR/hydration gets the complete draft,
 	// while subsequent React renders leave the browser-owned editable DOM alone.
 	const initial = React.useRef({ value: normalizePathInputValue(value, singleLine), autoFocus, singleLine });
@@ -60,6 +70,10 @@ export const PathInput = React.forwardRef<HTMLDivElement, PathInputProps>(functi
 		let pendingPaths: string[] = [];
 		let pendingPaste: string[] = [];
 		let mounted = true;
+		let hosts: ChipHost[] = [];
+		// The open equation edits `current` live without repainting (a repaint would destroy the field).
+		let math: { host: HTMLElement; start: number; source: string; before: PathEditSnapshot; field?: MathfieldElement } | null = null;
+		let typed = "";
 		const history = new PathInputHistory();
 
 		function remember() {
@@ -71,7 +85,10 @@ export const PathInput = React.forwardRef<HTMLDivElement, PathInputProps>(functi
 			return { value: current, selection: { ...saved } };
 		}
 		function paint(selection: TextSelection, restore: boolean) {
-			setChips(renderPathInput(root, current));
+			math = null;
+			setActive(null);
+			hosts = renderPathInput(root, current);
+			setChips(hosts);
 			saved = clampPathSelection(current, selection);
 			if (restore) restorePathSelection(root, saved);
 		}
@@ -86,6 +103,35 @@ export const PathInput = React.forwardRef<HTMLDivElement, PathInputProps>(functi
 		function replace(text: string) {
 			remember();
 			change(replacePathSelection(current, saved, text));
+		}
+		function openMath(start: number, caret: "start" | "end", before = snapshot()) {
+			const chip = hosts.find((host): host is ChipHost & { latex: string } => "latex" in host && host.start === start);
+			if (!chip) return;
+			math = { host: chip.host, start, source: current.slice(start, mathEnd(chip)), before };
+			typed = "";
+			setActive({ host: chip.host, caret });
+		}
+		function mathChange(latex: string) {
+			if (!math) return;
+			const source = `\\(${latex}\\)`;
+			current = current.slice(0, math.start) + source + current.slice(math.start + math.source.length);
+			math.source = source;
+			math.host.setAttribute(PATH_SOURCE_ATTRIBUTE, source);
+			callbacks.current.onValueChange(current);
+		}
+		function mathExit(side: MathExit, refocus: boolean) {
+			if (!math) return;
+			const { start, source, before } = math;
+			const empty = source === EMPTY_MATH;
+			const value = empty ? current.slice(0, start) + current.slice(start + source.length) : current;
+			const offset = empty || side === "before" ? start : start + source.length;
+			// One undo step per equation edit; an abandoned new equation leaves none.
+			if (value !== before.value) history.push(before);
+			const changed = value !== current;
+			current = value;
+			if (refocus) root.focus();
+			paint({ anchor: offset, focus: offset }, refocus);
+			if (changed) callbacks.current.onValueChange(current);
 		}
 		function travel(direction: "undo" | "redo") {
 			remember();
@@ -159,8 +205,33 @@ export const PathInput = React.forwardRef<HTMLDivElement, PathInputProps>(functi
 			// Shift+Delete is native Cut on Windows/Linux, not forward deletion.
 			// Let the browser dispatch cut so our clipboard handler can own it.
 			if (event.key === "Delete" && event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey) return;
+			if (math) {
+				// The equation is open but MathLive has not applied focus yet (it defers it): route keys there.
+				event.preventDefault();
+				event.stopPropagation(); // e.g. the owner's Enter-submits handler
+				if (event.key.length !== 1 || event.metaKey || event.ctrlKey) return;
+				if (math.field) typeInto(math.field, event.key);
+				else typed += event.key;
+				return;
+			}
 			remember();
-			if ((event.metaKey || event.ctrlKey) && !event.altKey && (event.key.toLowerCase() === "z" || event.key.toLowerCase() === "y")) {
+			const collapsed = saved.anchor === saved.focus;
+			if (isMathToggle(event)) {
+				event.preventDefault();
+				const before = snapshot();
+				const { start } = atomicPathRange(current, saved);
+				change(replacePathSelection(current, saved, EMPTY_MATH), false, before);
+				openMath(start, "end", before);
+			} else if ((event.key === "ArrowRight" || event.key === "ArrowLeft") && collapsed
+				&& !event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey) {
+				const forward = event.key === "ArrowRight";
+				const chip = hosts.find((host): host is ChipHost & { latex: string } =>
+					"latex" in host && (forward ? host.start : mathEnd(host)) === saved.focus);
+				if (chip) {
+					event.preventDefault();
+					openMath(chip.start, forward ? "start" : "end");
+				}
+			} else if ((event.metaKey || event.ctrlKey) && !event.altKey && (event.key.toLowerCase() === "z" || event.key.toLowerCase() === "y")) {
 				event.preventDefault();
 				travel(event.key.toLowerCase() === "y" || event.shiftKey ? "redo" : "undo");
 			} else if ((event.key === "Backspace" || event.key === "Delete") && !event.metaKey && !event.ctrlKey && !event.altKey) {
@@ -223,7 +294,13 @@ export const PathInput = React.forwardRef<HTMLDivElement, PathInputProps>(functi
 			});
 		}
 		controllerRef.current = {
-			remember,
+			remember, openMath, mathChange, mathExit,
+			mathReady(field) {
+				if (!math) return;
+				math.field = field;
+				if (typed) typeInto(field, typed);
+				typed = "";
+			},
 			external(next) {
 				next = normalizePathInputValue(next, callbacks.current.singleLine);
 				if (composing.current) { pendingExternal = next; return; }
@@ -289,7 +366,7 @@ export const PathInput = React.forwardRef<HTMLDivElement, PathInputProps>(functi
 				if (composing.current || event.nativeEvent.isComposing || event.keyCode === 229) { event.stopPropagation(); return; }
 				onKeyDown?.(event);
 			}}
-			onFocus={(event) => { controllerRef.current?.remember(); onFocus?.(event); }}
+			onFocus={(event) => { controllerRef.current?.remember(); void preloadMathLive(); onFocus?.(event); }}
 			onBlur={(event) => { controllerRef.current?.remember(); onBlur?.(event); }}
 			onInput={onInput}
 			onPaste={onPaste}
@@ -298,6 +375,15 @@ export const PathInput = React.forwardRef<HTMLDivElement, PathInputProps>(functi
 			onCompositionStart={onCompositionStart}
 			onCompositionEnd={onCompositionEnd}
 		>{initial.current.value}</div>
-		{chips.map(({ host, path }) => createPortal(<FilePathChip path={path} contentEditable={false} />, host))}
+		{chips.map((chip) => createPortal("path" in chip
+			? <FilePathChip path={chip.path} contentEditable={false} />
+			: <MathChip
+				latex={chip.latex}
+				caret={active?.host === chip.host ? active.caret : null}
+				onOpen={() => controllerRef.current?.openMath(chip.start, "end")}
+				onChange={(latex) => controllerRef.current?.mathChange(latex)}
+				onExit={(side, refocus) => controllerRef.current?.mathExit(side, refocus)}
+				onReady={(field) => controllerRef.current?.mathReady(field)}
+			/>, chip.host))}
 	</>;
 });

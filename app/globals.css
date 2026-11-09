@@ -602,3 +602,29 @@ body {
 	outline: 1px solid var(--border);
 	border-radius: 0.25rem;
 }
+
+/* Inline equation editor (components/math-chip.tsx): sit in the prose line, theme colors. */
+math-field {
+	display: inline-block;
+	padding: 0 0.15em;
+	border: 0;
+	border-radius: 0.25rem;
+	background: var(--muted);
+	color: var(--foreground);
+	font-size: inherit;
+	vertical-align: middle;
+	--primary-color: var(--muted-foreground);
+	--caret-color: var(--foreground);
+	--selection-background-color: color-mix(in oklab, var(--foreground) 25%, transparent);
+	--contains-highlight-background-color: transparent;
+	--smart-fence-color: var(--muted-foreground);
+}
+math-field:focus-within { outline: 1px solid var(--ring); }
+math-field::part(menu-toggle) { display: none; }
+math-field::part(virtual-keyboard-toggle) {
+	width: 1.25em;
+	height: 1.25em;
+	margin: 0 0 0 0.2em;
+	border-radius: 0.25rem;
+	color: var(--muted-foreground);
+}

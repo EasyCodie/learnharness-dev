@@ -627,3 +627,16 @@ test("single-line IME sanitizes after completion, and queued external assignment
 	assert.equal(readPathInput(f.root), "externalvalue");
 	assert.deepEqual(f.writes, ["a中文"]);
 });
+
+test("\\(…\\) equations are atomic chips: lossless DOM, whole-token delete and selection", () => {
+	const root = editor();
+	const value = `so \\(\\frac12\\) costs $5 and $6 ${quoteFilePath("/a.pdf")}`;
+	const hosts = renderPathInput(root, value);
+	assert.deepEqual(hosts.map((host) => "latex" in host ? host.latex : host.path), ["\\frac12", "/a.pdf"]);
+	assert.equal(hosts[0]!.start, 3);
+	for (const { host } of hosts) host.textContent = "rendered";
+	assert.equal(readPathInput(root), value);
+	const end = 3 + "\\(\\frac12\\)".length;
+	assert.deepEqual(adjacentPathRange(value, { anchor: end, focus: end }, "backward"), { anchor: 3, focus: end });
+	assert.deepEqual(atomicPathRange(value, { anchor: 5, focus: end + 2 }), { start: 3, end: end + 2 });
+});
