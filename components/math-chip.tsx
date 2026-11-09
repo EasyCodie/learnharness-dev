@@ -1,6 +1,7 @@
 import * as React from "react";
 import katex from "katex";
 import type { MathfieldElement } from "mathlive";
+import { bindingForAction, eventBinding } from "@/src/core";
 
 export type MathExit = "before" | "after";
 export type MathChipProps = {
@@ -43,8 +44,8 @@ export function scriptTarget(atom: ScriptAtom, direction: "upward" | "downward")
 		if (at.parentBranch === from) return at.parent.createBranch(to).at(-1);
 }
 
-export const isMathToggle =(event: KeyboardEvent | React.KeyboardEvent) =>
-	(event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "e";
+// Registry matching: non-Latin layouts (⌘+у on Russian) still hit the physical E key.
+export const isMathToggle = (event: KeyboardEvent) => eventBinding(event) === bindingForAction("equation-toggle");
 
 /** Idle: the transcript's KaTeX rendering. Active: a lazily loaded MathLive field. */
 export function MathChip({ latex, caret, ...handlers }: MathChipProps) {

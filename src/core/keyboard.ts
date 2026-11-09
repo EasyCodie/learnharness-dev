@@ -35,6 +35,9 @@ export type KeyAction =
 	| "question-prev-row"
 	| "question-pick-row"
 	| "question-submit"
+	| "equation-toggle"
+	| "equation-leave"
+	| "equation-limits"
 	| "open-settings"
 	| "toggle-user-thinking";
 
@@ -85,6 +88,11 @@ export const KEYBOARD_ACTIONS: readonly KeyActionDef[] = [
 	{ id: "question-prev-row", label: "Question · previous row", scope: "chat", binding: "arrowup", displayOnly: true },
 	{ id: "question-pick-row", label: "Question · pick row", scope: "chat", binding: "space", displayOnly: true },
 	{ id: "question-submit", label: "Question · submit", scope: "chat", binding: "enter", displayOnly: true },
+	// Inline equations (math-chip.tsx / path-input.tsx) — displayOnly: every
+	// text box owns these keys itself, so they are listed, never dispatched.
+	{ id: "equation-toggle", label: "Equation · insert or leave", scope: "global", binding: "mod+e", displayOnly: true },
+	{ id: "equation-leave", label: "Equation · leave (Enter again submits)", scope: "global", binding: "enter", displayOnly: true },
+	{ id: "equation-limits", label: "Equation · move between limits", scope: "global", binding: "arrowupdown", displayOnly: true },
 ];
 
 const STORAGE_KEY = "lh:keymap";
@@ -213,6 +221,7 @@ const KEY_GLYPH: Record<string, string> = {
 	arrowdown: "↓",
 	arrowleft: "←",
 	arrowright: "→",
+	arrowupdown: "↑ / ↓", // display-only pair (equation limits)
 	enter: "↵",
 	tab: "⇥",
 	escape: "Esc",

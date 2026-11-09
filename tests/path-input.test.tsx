@@ -10,7 +10,7 @@ import {
 	readPathSelection, renderPathInput, replacePathSelection, restorePathSelection,
 } from "../components/path-input-dom.ts";
 import { quoteFilePath } from "../src/core/file-paths.ts";
-import { editableLatex, scriptTarget, storableLatex } from "../components/math-chip.tsx";
+import { editableLatex, isMathToggle, scriptTarget, storableLatex } from "../components/math-chip.tsx";
 
 function editor() {
 	const { document } = parseHTML("<html><body><div id='editor'></div></body></html>");
@@ -690,4 +690,15 @@ test("ArrowUp/Down cross between an atom's subscript and superscript, like the l
 	// Already on top, or not in a script: no target, so the caret leaves the equation.
 	assert.equal(scriptTarget(upper, "upward"), undefined);
 	assert.equal(scriptTarget(integral, "downward"), undefined);
+});
+
+test("Mod+E toggles an equation on any keyboard layout, and only without extra modifiers", () => {
+	const key = (init: Partial<KeyboardEvent>) => ({ ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, ...init }) as KeyboardEvent;
+	assert.equal(isMathToggle(key({ key: "e", code: "KeyE", metaKey: true })), true);
+	assert.equal(isMathToggle(key({ key: "e", code: "KeyE", ctrlKey: true })), true);
+	// Russian layout: the physical E key reports "у".
+	assert.equal(isMathToggle(key({ key: "у", code: "KeyE", metaKey: true })), true);
+	assert.equal(isMathToggle(key({ key: "E", code: "KeyE", metaKey: true, shiftKey: true })), false);
+	assert.equal(isMathToggle(key({ key: "´", code: "KeyE", metaKey: true, altKey: true })), false);
+	assert.equal(isMathToggle(key({ key: "e", code: "KeyE" })), false);
 });

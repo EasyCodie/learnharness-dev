@@ -52,7 +52,8 @@ describe("eventBinding — non-Latin layouts", () => {
 			for (const modifier of [{ ctrlKey: true }, { metaKey: true }]) {
 				const binding = eventBinding(press({ key: "λ", code: `Key${match[2]!.toUpperCase()}`, shiftKey: !!match[1], ...modifier }));
 				assert.equal(binding, action.binding);
-				assert.equal(actionForBinding(binding), action.id);
+				// displayOnly keys are owned by their surface, never dispatched by the registry.
+				assert.equal(actionForBinding(binding), action.displayOnly ? undefined : action.id);
 			}
 		}
 	});
