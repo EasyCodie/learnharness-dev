@@ -31,7 +31,7 @@ export const computeTool: AgentTool<typeof computeInput> = {
 		"Use it to check calculations, not to think: work the problem yourself, then check the result. " +
 		"REQUIRED before committing any answer key that depends on a calculation, even when the calculation looks trivial — a quiz or recall `correctAnswer`, or a practice `modelSolution` " +
 		"(integrals, derivatives, algebra, exact arithmetic, probabilities, matrix work, an algorithm's trace). " +
-		"Put every check for one question in a single call. Each call starts fresh: nothing carries over. " +
+		"Put every check for one question in a single call. Each call starts fresh: variables and common settings (precision, evaluation, recursion limit) reset between calls. " +
 		"The learner never sees the code or the result. If the check disagrees with your answer, find out which is wrong before committing.",
 	parameters: computeInput,
 	// One engine process runs one job at a time; never overlap calls.

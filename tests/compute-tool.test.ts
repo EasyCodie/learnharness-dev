@@ -130,4 +130,14 @@ describe("compute tool", { timeout: 60_000 }, () => {
 		assert.equal(await runCompute("print(9, end='')"), "9\n");
 		assert.equal(await runCompute("print('1/2')"), "1/2\n");
 	});
+
+	it("resets interpreter settings between calls", async () => {
+		const read = "import sys, decimal, mpmath\nfrom sympy.core.parameters import global_parameters as g\n(sys.getrecursionlimit(), sys.get_int_max_str_digits(), decimal.getcontext().prec, mpmath.mp.dps, g.evaluate, g.distribute, g.exp_is_pow)";
+		const before = await runCompute(read);
+		await runCompute("import sys, decimal, mpmath, random, io\nfrom sympy.core.parameters import global_parameters as g\nsys.setrecursionlimit(50000)\nsys.set_int_max_str_digits(640)\ndecimal.getcontext().prec = 6\nmpmath.mp.dps = 6\ng.evaluate = False\ng.distribute = False\ng.exp_is_pow = True\nrandom.seed(1)\nsys.stdout = sys.stderr = io.StringIO()");
+		assert.equal(await runCompute(read), before);
+		assert.notEqual(await runCompute("import random\nrandom.random()"), "0.13436424411240122");
+		assert.equal(await runCompute("x = Symbol('x')\nx + x"), "2*x");
+		assert.equal(await runCompute("print('seen')"), "seen\n");
+	});
 });

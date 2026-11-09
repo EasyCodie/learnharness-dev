@@ -28,12 +28,19 @@ const py = await loadPyodide({
 const wheels = readdirSync(wheelDir).filter((f) => f.endsWith(".whl")).map((f) => wheelDir + f);
 await py.loadPackage(wheels, { messageCallback() {}, errorCallback() {} });
 py.runPython(`
-import ast, json, os, sys, traceback
+import ast, decimal, json, os, random, sys, traceback
+import mpmath
+from sympy.core.parameters import global_parameters as _lh_params
 _lh_base = {"__name__": "__main__"}
 exec("from sympy import *", _lh_base)
 
 def _lh_run(code):
     g = dict(_lh_base)  # fresh namespace per call: no state carries over
+    # Settings a job may change are put back after it. sys.modules stays: dropping lazily
+    # loaded SymPy submodules would duplicate classes and break isinstance.
+    limits = (sys.getrecursionlimit(), sys.get_int_max_str_digits(), mpmath.mp.prec)
+    context, state = decimal.getcontext().copy(), random.getstate()
+    params = (_lh_params.evaluate, _lh_params.distribute, _lh_params.exp_is_pow)
     try:
         tree = ast.parse(code, "<compute>", "exec")
         last = tree.body.pop() if tree.body and isinstance(tree.body[-1], ast.Expr) else None
@@ -43,6 +50,13 @@ def _lh_run(code):
     except BaseException:
         return json.dumps([False, "\\n".join(traceback.format_exc().splitlines()[-20:])])
     finally:
+        sys.setrecursionlimit(limits[0])
+        sys.set_int_max_str_digits(limits[1])
+        mpmath.mp.prec = limits[2]
+        decimal.setcontext(context)
+        random.setstate(state)
+        _lh_params.evaluate, _lh_params.distribute, _lh_params.exp_is_pow = params
+        sys.stdout, sys.stderr = sys.__stdout__, sys.__stderr__
         try:
             sys.stdout.flush()
             sys.stderr.flush()
