@@ -4,6 +4,7 @@ import { useCallback, useRef, useState } from "react";
 import { ChevronRightIcon } from "lucide-react";
 import { ToolContentResponse } from "@/components/ai-elements/message";
 import { Button } from "@/components/ui/button";
+import { MathToggleButton } from "@/components/math-toggle-button";
 import { joinDictation, useDictationTarget } from "@/components/dictation";
 import { useEnterSubmits } from "@/components/enter-submits";
 import { PathInput } from "@/components/path-input";
@@ -55,6 +56,7 @@ export function PracticeDock({ problemCallId, input, expanded, onExpand, onSubmi
 	// discipline): a submit resuming after `await finishDictation()` reads
 	// the tail, never a stale closure.
 	const thinkingRef = useRef("");
+	const fieldRef = useRef<HTMLDivElement>(null);
 
 	useDictationTarget(
 		useCallback(
@@ -123,6 +125,7 @@ export function PracticeDock({ problemCallId, input, expanded, onExpand, onSubmi
 					YOUR THINKING
 				</div>
 				<PathInput
+					ref={fieldRef}
 					value={thinking}
 					onValueChange={(value) => {
 						thinkingRef.current = value;
@@ -157,12 +160,13 @@ export function PracticeDock({ problemCallId, input, expanded, onExpand, onSubmi
 					<span aria-hidden className="pl-1.5 text-xs text-muted-foreground">
 						{compactionRunning ? "compacting session…" : "↵ submits · ⇧↵ newline"}
 					</span>
+					<MathToggleButton editorRef={fieldRef} className="ml-auto size-9 rounded-[6px]" />
 					<Button
 						type="button"
 						data-testid="practice-send"
 						disabled={thinking.trim().length === 0 || compactionRunning}
 						onClick={() => submit()}
-						className="ml-auto h-9 rounded-[6px] px-3.5 text-sm font-medium"
+						className="h-9 rounded-[6px] px-3.5 text-sm font-medium"
 					>
 						Submit thinking
 					</Button>

@@ -151,7 +151,8 @@ function MathField({ latex, caret, onChange, onExit, onReady }: Omit<MathChipPro
 			wrap.replaceChildren(field);
 		};
 		if (mathlive) mount(mathlive);
-		else void preloadMathLive().then(mount);
+		// If MathLive cannot load, close the equation rather than leave a dead field eating keys.
+		else void preloadMathLive().then(mount, () => exit("after", true));
 		return () => {
 			closed = true;
 			window.mathVirtualKeyboard?.hide();
