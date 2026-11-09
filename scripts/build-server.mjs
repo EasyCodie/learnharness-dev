@@ -77,14 +77,20 @@ for (const extra of ["dist", path.join("node_modules", "electron")]) {
 	}
 }
 
-// 3) Sanity: the runtime-read prompt assets must be present (the teacher
-//    agent reads them from disk at request time).
+// 3) Sanity: the runtime-read assets must be present (the teacher agent
+//    reads its prompts from disk at request time; the compute tool spawns its
+//    worker and loads Pyodide + the vendored wheels from cwd-relative paths).
 for (const asset of [
 	path.join("src", "agent", "system-prompt.md"),
 	path.join("src", "agent", "prompts", "teacher", "20-teaching.md"),
+	path.join("src", "agent", "compute", "compute-worker.mjs"),
+	path.join("node_modules", "pyodide", "pyodide.asm.wasm"),
+	path.join("node_modules", "pyodide", "python_stdlib.zip"),
+	path.join("vendor", "pyodide-packages", "sympy-1.14.0-py3-none-any.whl"),
+	path.join("vendor", "pyodide-packages", "mpmath-1.4.1-py3-none-any.whl"),
 ]) {
 	if (!exists(path.join(STANDALONE, asset))) {
-		console.error(`[build-server] prompt asset missing from the trace: ${asset}`);
+		console.error(`[build-server] runtime asset missing from the trace: ${asset}`);
 		process.exit(1);
 	}
 }

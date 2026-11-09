@@ -28,6 +28,13 @@ function withPayload(test: (fixture: {
 		write(path.join("public", "asset.txt"));
 		write(path.join(STANDALONE, PROMPT));
 		write(path.join(STANDALONE, "src", "agent", "prompts", "teacher", "20-teaching.md"));
+		for (const asset of [
+			["src", "agent", "compute", "compute-worker.mjs"],
+			["node_modules", "pyodide", "pyodide.asm.wasm"],
+			["node_modules", "pyodide", "python_stdlib.zip"],
+			["vendor", "pyodide-packages", "sympy-1.14.0-py3-none-any.whl"],
+			["vendor", "pyodide-packages", "mpmath-1.4.1-py3-none-any.whl"],
+		]) write(path.join(STANDALONE, ...asset));
 		test({ root, write, run: () => spawnSync(process.execPath, [path.join(root, "scripts", "build-server.mjs")], {
 			cwd: root, encoding: "utf8", timeout: 10_000,
 		}) });
@@ -90,7 +97,7 @@ describe("desktop standalone payload", () => {
 			fs.rmSync(path.join(root, STANDALONE, PROMPT));
 			const result = run();
 			assert.equal(result.status, 1);
-			assert.match(String(result.stderr), /prompt asset missing/);
+			assert.match(String(result.stderr), /runtime asset missing/);
 		});
 	});
 });

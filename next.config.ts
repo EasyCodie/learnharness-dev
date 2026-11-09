@@ -91,6 +91,11 @@ const nextConfig: NextConfig = {
 			// Wave E stage 2: resvg rasterizes visual-maker SVGs natively; same
 			// per-platform-binary story as the canvas above (one per build).
 			"node_modules/@resvg/resvg-js-*/**/*",
+			// compute tool (2026-11-09): the sandbox child process loads the worker,
+			// Pyodide's WASM/stdlib, and the vendored SymPy wheels by runtime path.
+			"src/agent/compute/*.mjs",
+			"node_modules/pyodide/**/*",
+			"vendor/pyodide-packages/*.whl",
 			"node_modules/@earendil-works/pi-ai/dist/providers/data/**/*",
 			// Public native OAuth factories load these flows through variable imports.
 			// Electron main uses the same standalone SDK; the offline runtime gate
@@ -118,6 +123,7 @@ const nextConfig: NextConfig = {
 		"@napi-rs/canvas", // native binding — bundling breaks the .node require
 		"@silvia-odwyer/photon-node", // CJS loads its adjacent WASM from disk
 		"@resvg/resvg-js", // native binding — same
+		"pyodide", // loaded only inside the compute child process, by file path
 	],
 };
 

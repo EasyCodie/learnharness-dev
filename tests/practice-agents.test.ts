@@ -200,7 +200,7 @@ describe("the practice agent", () => {
 		const tools = practiceTools(ctxOf([]));
 		assert.deepEqual(
 			Object.keys(tools).sort(),
-			["conclude", "find", "grep", "ls", "problem", "read"],
+			["compute", "conclude", "find", "grep", "ls", "problem", "read"],
 		);
 	});
 
@@ -213,10 +213,15 @@ describe("the practice agent", () => {
 		// not apply the teacher/prober user tool-toggle filter.
 		assert.deepEqual(
 			Object.keys(tools).sort(),
-			["conclude", "find", "grep", "list_propositions", "list_sessions", "ls", "pdf", "problem", "read", "research"],
+			["compute", "conclude", "find", "grep", "list_propositions", "list_sessions", "ls", "pdf", "problem", "read", "research"],
 		);
 		const withSearch = practiceTools({ ...ctxOf([]), jobs: { ...jobs, searchAvailable: () => true }, graph });
 		assert.ok(withSearch.research, "a live engine also keeps research");
+	});
+
+	it("compute is the one practice tool that follows the user's toggle", () => {
+		assert.ok(practiceTools(ctxOf([]), { research: false }).compute, "other toggles leave compute alone");
+		assert.equal(practiceTools(ctxOf([]), { compute: false }).compute, undefined);
 	});
 
 	it("constructs with exactly the two practice tools", () => {
