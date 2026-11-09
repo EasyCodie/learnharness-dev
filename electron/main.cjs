@@ -43,7 +43,9 @@ const path = require("node:path");
 // renderer owns the number; this is the IPC widen target).
 const SIDEBAR_AUTOCLOSE = 928;
 
-const PRODUCT_NAME = "LearnHarness";
+// A side-by-side build (electron-builder.personal.yml) sets productName via
+// extraMetadata, which gives it its own app name, userData and instance lock.
+const PRODUCT_NAME = require("../package.json").productName || "LearnHarness";
 
 // APP NAME → userData (owner, 2026-10-10): the Application Support dir is
 // exactly "LearnHarness" in dev AND packaged. Packaged Electron would
@@ -510,6 +512,12 @@ function setupAutoUpdater() {
 		reportUpdateStatus("disabled");
 		return;
 	}
+	// Builds published with no feed (publish: null) ship no app-update.yml.
+	if (!process.env.LH_UPDATE_FEED && !fs.existsSync(path.join(process.resourcesPath, "app-update.yml"))) {
+		log("auto-update: build has no update feed — updater disabled");
+		reportUpdateStatus("disabled");
+		return;
+	}
 	try {
 		autoUpdater = require("electron-updater").autoUpdater;
 	} catch (err) {
@@ -651,6 +659,8 @@ async function main() {
 	// spawn, no packaging, full HMR. The rest of this shell still applies
 	// (guards, menu, single instance).
 	const devUrl = process.env.LH_DEV_URL;
+	// Blue dock icon tells the dev build apart from the installed official app.
+	if (devUrl) app.dock?.setIcon(path.join(__dirname, "..", "build", "icon-dev.png"));
 	const url = devUrl ?? `http://127.0.0.1:${await freePort()}`;
 	if (!devUrl) {
 		desktopAPISecret = randomBytes(32).toString("hex");
