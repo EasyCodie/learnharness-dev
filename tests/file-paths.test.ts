@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { directoryReferencePath, filePathLabel, isDirectoryReference, parseFilePaths, quoteFilePath } from "../src/core/file-paths.ts";
+import { directoryReferencePath, filePathLabel, isDirectoryReference, parseFilePaths, parseLearnerText, quoteFilePath } from "../src/core/file-paths.ts";
 
 function paths(text: string) {
 	return parseFilePaths(text).flatMap((part) => part.kind === "path" ? [part.path] : []);
@@ -150,5 +150,16 @@ describe("filePathLabel", () => {
 			["/tmp/folder/", "folder"], ["/", "/"], ["~/", "~/"], ["C:\\", "C:\\"],
 			["/tmp/a`b", "a`b"],
 		]) assert.equal(filePathLabel(path!), label);
+	});
+});
+
+describe("parseLearnerText", () => {
+	it("splits \\(…\\) math out of prose losslessly and leaves dollars and paths alone", () => {
+		const text = "costs $5 and $6, so \\(\\frac{a}{b}\\)=\\(\\)x `/a/b.pdf` \\(open";
+		const parts = parseLearnerText(text);
+		assert.equal(parts.map((part) => part.text).join(""), text);
+		for (const part of parts) assert.equal(text.slice(part.start, part.end), part.text);
+		assert.deepEqual(parts.flatMap((part) => part.kind === "math" ? [part.latex] : []), ["\\frac{a}{b}", ""]);
+		assert.deepEqual(parts.map((part) => part.kind), ["text", "math", "text", "math", "text", "path", "text"]);
 	});
 });

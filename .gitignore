@@ -19,3 +19,9 @@ xai-credentials.json*
 
 # dev-fresh launcher scratch (fresh-user sim): disposable per launch
 .fresh-data/
+
+# Local agent plans/specs (not shipped)
+docs/superpowers/
+
+# Playwright MCP browser snapshots (local scratch)
+.playwright-mcp/

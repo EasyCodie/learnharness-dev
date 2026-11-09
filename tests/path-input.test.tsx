@@ -10,6 +10,7 @@ import {
 	readPathSelection, renderPathInput, replacePathSelection, restorePathSelection,
 } from "../components/path-input-dom.ts";
 import { quoteFilePath } from "../src/core/file-paths.ts";
+import { editableLatex, scriptTarget, storableLatex } from "../components/math-chip.tsx";
 
 function editor() {
 	const { document } = parseHTML("<html><body><div id='editor'></div></body></html>");
@@ -626,4 +627,67 @@ test("single-line IME sanitizes after completion, and queued external assignment
 	await f.event("compositionend");
 	assert.equal(readPathInput(f.root), "externalvalue");
 	assert.deepEqual(f.writes, ["a中文"]);
+});
+
+test("\\(…\\) equations are atomic chips: lossless DOM, whole-token delete and selection", () => {
+	const root = editor();
+	const value = `so \\(\\frac12\\) costs $5 and $6 ${quoteFilePath("/a.pdf")}`;
+	const hosts = renderPathInput(root, value);
+	assert.deepEqual(hosts.map((host) => "latex" in host ? host.latex : host.path), ["\\frac12", "/a.pdf"]);
+	assert.equal(hosts[0]!.start, 3);
+	for (const { host } of hosts) host.textContent = "rendered";
+	assert.equal(readPathInput(root), value);
+	const end = 3 + "\\(\\frac12\\)".length;
+	assert.deepEqual(adjacentPathRange(value, { anchor: end, focus: end }, "backward"), { anchor: 3, focus: end });
+	assert.deepEqual(atomicPathRange(value, { anchor: 5, focus: end + 2 }), { start: 3, end: end + 2 });
+});
+
+test("equations are stored without MathLive's empty-slot markers or empty limits", () => {
+	// An integral left with empty limits is indefinite; KaTeX cannot render \\placeholder.
+	// Input is MathLive's "latex-expanded" output, which keeps \\placeholder.
+	assert.equal(storableLatex("\\int_{\\placeholder{}}^{\\placeholder{}}\\sqrt{3-\\sin^2x}\\mathrm{d}x"), "\\int\\sqrt{3-\\sin^2x}\\mathrm{d}x");
+	assert.equal(storableLatex("\\sum_{n=1}^{\\placeholder[up]{}}a_n"), "\\sum_{n=1}a_n");
+	assert.equal(storableLatex("\\frac{\\placeholder{}}{2}"), "\\frac{}{2}");
+	// Removing a slot must not glue a command to the letters after it (\\int + xdx ≠ \\intxdx).
+	assert.equal(storableLatex("\\int_{\\placeholder{}}^{\\placeholder{}}xdx"), "\\int xdx");
+	assert.equal(storableLatex("\\alpha\\placeholder{}x"), "\\alpha x");
+	assert.equal(editableLatex(storableLatex("\\int_{\\placeholder{}}^{\\placeholder{}}xdx")), "\\int_{\\placeholder{}}^{\\placeholder{}} xdx");
+	assert.equal(storableLatex("\\{\\}_\\{"), "\\{\\}_\\{");
+});
+
+test("reopened integrals, sums and products get their empty limit boxes back", () => {
+	const empty = "_{\\placeholder{}}^{\\placeholder{}}";
+	assert.equal(editableLatex("\\int\\sqrt{x}\\mathrm{d}x"), `\\int${empty}\\sqrt{x}\\mathrm{d}x`);
+	assert.equal(editableLatex("\\sum a+\\prod b"), `\\sum${empty} a+\\prod${empty} b`);
+	// Existing limits and longer commands are left alone.
+	for (const latex of ["\\int_0^1x", "\\sum^{n}a", "\\intop x", "\\iint f"]) assert.equal(editableLatex(latex), latex);
+	for (const latex of ["\\int\\sqrt{x}\\mathrm{d}x", "\\sum a+\\prod b"]) assert.equal(storableLatex(editableLatex(latex)), latex);
+});
+
+test("ArrowUp/Down cross between an atom's subscript and superscript, like the limits of an integral", () => {
+	// Minimal stand-in for MathLive's atom tree: branches start with a "first" atom.
+	type FakeAtom = { parent?: FakeAtom; parentBranch?: string; branches: Record<string, FakeAtom[]>; createBranch(name: string): FakeAtom[] };
+	const atom = (parent?: FakeAtom, parentBranch?: string, first = false): FakeAtom => {
+		const made: FakeAtom = {
+			parent, parentBranch, branches: {},
+			createBranch: (name) => (made.branches[name] ??= [atom(made, name, true)]),
+		};
+		if (parent && parentBranch && !first) parent.createBranch(parentBranch).push(made);
+		return made;
+	};
+	const integral = atom(atom());
+	const lower = atom(integral, "subscript");
+	const upper = atom(integral, "superscript");
+	assert.equal(scriptTarget(lower, "upward"), upper);
+	assert.equal(scriptTarget(upper, "downward"), lower);
+	// The nearest script wins, through any nesting (x^2 inside the lower limit).
+	const power = atom(atom(lower.parent, "subscript"), "superscript");
+	assert.equal(scriptTarget(power, "upward"), upper);
+	// A missing limit is created (the caret lands on its "first" atom), as MathLive does for \underset.
+	const sum = atom(atom());
+	const onlyLower = atom(sum, "subscript");
+	assert.equal(scriptTarget(onlyLower, "upward"), sum.branches.superscript![0]);
+	// Already on top, or not in a script: no target, so the caret leaves the equation.
+	assert.equal(scriptTarget(upper, "upward"), undefined);
+	assert.equal(scriptTarget(integral, "downward"), undefined);
 });

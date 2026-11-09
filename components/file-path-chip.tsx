@@ -10,7 +10,8 @@ import {
 	FileVideo,
 	Folder,
 } from "lucide-react";
-import { filePathLabel, isDirectoryReference, parseFilePaths } from "@/src/core";
+import katex from "katex";
+import { filePathLabel, isDirectoryReference, parseLearnerText } from "@/src/core";
 
 function fileIcon(label: string) {
 	const extension = label.split(".").at(-1)?.toLowerCase();
@@ -49,13 +50,15 @@ export function FilePathChip({ path, contentEditable, className }: FilePathChipP
 	);
 }
 
-/** Ordinary learner text stays ordinary text; only quoted paths become chips. */
+/** Ordinary learner text stays ordinary text; only quoted paths and \(…\) equations render. */
 export function PathText({ text }: { text: string }) {
 	return (
 		<>
-			{parseFilePaths(text).map((part) => (
+			{parseLearnerText(text).map((part) => (
 				<Fragment key={part.start}>
-					{part.kind === "path" ? <FilePathChip path={part.path} /> : part.text}
+					{part.kind === "path" ? <FilePathChip path={part.path} />
+						: part.kind === "math" ? <span role="img" aria-label={part.latex} dangerouslySetInnerHTML={{ __html: katex.renderToString(part.latex, { throwOnError: false, output: "html" }) }} />
+						: part.text}
 				</Fragment>
 			))}
 		</>
