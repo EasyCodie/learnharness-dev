@@ -1,0 +1,22 @@
+# LearnHarness Personal — a local, side-by-side build of this repo's main
+# branch (owner ruling 2026-11-09). Built by scripts/build-personal.sh;
+# everything not overridden here comes from electron-builder.yml.
+extends: electron-builder.yml
+appId: com.learnharness.LearnHarness.personal
+productName: LearnHarness Personal
+# main.cjs reads productName for app.name → own userData + instance lock.
+extraMetadata:
+  productName: LearnHarness Personal
+mac:
+  # No Xcode/actool needed: a flat green icns instead of the Icon Composer doc.
+  icon: build/icon-personal.icns
+  # Ad-hoc signature, no Apple account: runs locally, never distributed.
+  identity: "-"
+  notarize: false
+  # Hardened runtime's library validation rejects ad-hoc (team-less) frameworks.
+  hardenedRuntime: false
+  target: dir
+# after-pack.cjs swaps in the official (black) icns — not wanted here.
+afterPack: null
+# No feed → no app-update.yml → main.cjs disables the updater.
+publish: null
