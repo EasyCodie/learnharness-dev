@@ -183,7 +183,7 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
 	return (
 		<SidebarContext.Provider value={{ open: open && !narrow, toggle }}>
 			{/* transitions gated on mount: no slide-in flash on page load */}
-			<div className={cn("flex h-app", mounted && "[&_.sidebar-motion]:transition-[width,margin,opacity]")}>{children}</div>
+			<div className={cn("flex h-dvh", mounted && "[&_.sidebar-motion]:transition-[width,margin,opacity]")}>{children}</div>
 		</SidebarContext.Provider>
 	);
 }
