@@ -560,6 +560,11 @@ body {
 	max-width: max(0px, calc(100% - 5.5rem - var(--lh-wco-right, 0px)));
 }
 
+/* App roots fill the window above the math keyboard (height set in components/math-chip.tsx). */
+@utility h-app {
+	height: calc(100dvh - var(--math-keyboard-height, 0px));
+}
+
 /* --font-title deliberately NOT @theme inline (see comment above): the
    session-name-serif toggle overrides this var at runtime, so the
    .font-title utility must read it through var(), not carry a baked copy. */

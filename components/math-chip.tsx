@@ -25,11 +25,25 @@ const keepCommandBoundary = (slot: string, at: number, latex: string) =>
 	/\\[A-Za-z]+$/.test(latex.slice(0, at)) && /[A-Za-z]/.test(latex[at + slot.length] ?? "") ? " " : "";
 
 /** Reopening: give limitless \int/\sum/\prod their empty limit boxes back (hidden until the caret
- * lands in one; see MathField). shortcut: a single missing limit is not restored; type _ or ^. */
+ * lands in one; see MathField). A single missing limit is not restored here: ArrowUp/Down recreates it (scriptTarget). */
 export const editableLatex = (latex: string) =>
 	latex.replace(/\\(int|sum|prod)(?![A-Za-z_^])/g, "\\$1_{\\placeholder{}}^{\\placeholder{}}");
 
-export const isMathToggle = (event: KeyboardEvent | React.KeyboardEvent) =>
+/** The slice of MathLive's internal atom tree that vertical script navigation reads. */
+type ScriptAtom = { parent?: ScriptAtom; parentBranch?: unknown; createBranch(name: "subscript" | "superscript"): ScriptAtom[] };
+type MathModel = { at(offset: number): ScriptAtom; offsetOf(atom: ScriptAtom): number; setPositionHandlingPlaceholder(offset: number): void };
+
+/** MathLive 0.111's ArrowUp/Down only cross \frac/\underset parts and matrix rows, so the limits of
+ * ∫/Σ/∏ (and any x_n^m) were a dead end that left the equation. Returns the atom to put the caret
+ * after: the end of the opposite script of the nearest ancestor sitting in a sub/superscript.
+ * A missing script is created empty, as MathLive does for \underset; storableLatex drops it if unused. */
+export function scriptTarget(atom: ScriptAtom, direction: "upward" | "downward"): ScriptAtom | undefined {
+	const [from, to] = direction === "upward" ? ["subscript", "superscript"] as const : ["superscript", "subscript"] as const;
+	for (let at: ScriptAtom | undefined = atom; at?.parent; at = at.parent)
+		if (at.parentBranch === from) return at.parent.createBranch(to).at(-1);
+}
+
+export const isMathToggle =(event: KeyboardEvent | React.KeyboardEvent) =>
 	(event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "e";
 
 /** Idle: the transcript's KaTeX rendering. Active: a lazily loaded MathLive field. */
@@ -55,6 +69,14 @@ export function preloadMathLive() {
 		// The app's KaTeX stylesheet already provides the same font families.
 		module.MathfieldElement.fontsDirectory = null;
 		module.MathfieldElement.soundsDirectory = null;
+		if (!mathlive) {
+			// The keyboard is fixed over the window bottom: publish its height so the app shrinks above it (.h-app).
+			const keyboard = window.mathVirtualKeyboard;
+			// No "abc" tab: learners type letters on their physical keyboard.
+			keyboard.layouts = ["numeric", "symbols", "greek"];
+			const sync = () => document.documentElement.style.setProperty("--math-keyboard-height", `${keyboard.boundingRect.height}px`);
+			for (const type of ["geometrychange", "virtual-keyboard-toggle"]) keyboard.addEventListener(type, sync);
+		}
 		return (mathlive = module);
 	});
 }
@@ -103,6 +125,13 @@ function MathField({ latex, caret, onChange, onExit, onReady }: Omit<MathChipPro
 			field.addEventListener("input", () => props.current.onChange(storableLatex(field.getValue("latex-expanded"))));
 			field.addEventListener("move-out", (event) => {
 				event.preventDefault();
+				const { direction } = event.detail;
+				if (direction === "upward" || direction === "downward") {
+					// shortcut: reads MathLive's private model (pinned ^0.111); recheck on a MathLive upgrade.
+					const model = (field as unknown as { _mathfield?: { model?: MathModel } })._mathfield?.model;
+					const target = model && scriptTarget(model.at(field.position), direction);
+					if (target) return model.setPositionHandlingPlaceholder(model.offsetOf(target));
+				}
 				exit(event.detail.direction === "backward" || event.detail.direction === "upward" ? "before" : "after", true);
 			});
 			field.addEventListener("focusout", () => queueMicrotask(() => {
@@ -114,6 +143,8 @@ function MathField({ latex, caret, onChange, onExit, onReady }: Omit<MathChipPro
 				if (closed) return;
 				field.focus();
 				field.position = props.current.caret === "start" ? 0 : field.lastOffset;
+				// The math keyboard opens and closes with the equation (closed in the cleanup below).
+				window.mathVirtualKeyboard.show();
 				props.current.onReady(field);
 			}, { once: true });
 			wrap.replaceChildren(field);
@@ -122,6 +153,7 @@ function MathField({ latex, caret, onChange, onExit, onReady }: Omit<MathChipPro
 		else void preloadMathLive().then(mount);
 		return () => {
 			closed = true;
+			window.mathVirtualKeyboard?.hide();
 			wrap.removeEventListener("keydown", intercept, true);
 			for (const type of ISOLATED) wrap.removeEventListener(type, stop);
 		};

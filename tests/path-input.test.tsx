@@ -10,7 +10,7 @@ import {
 	readPathSelection, renderPathInput, replacePathSelection, restorePathSelection,
 } from "../components/path-input-dom.ts";
 import { quoteFilePath } from "../src/core/file-paths.ts";
-import { editableLatex, storableLatex } from "../components/math-chip.tsx";
+import { editableLatex, scriptTarget, storableLatex } from "../components/math-chip.tsx";
 
 function editor() {
 	const { document } = parseHTML("<html><body><div id='editor'></div></body></html>");
@@ -662,4 +662,32 @@ test("reopened integrals, sums and products get their empty limit boxes back", (
 	// Existing limits and longer commands are left alone.
 	for (const latex of ["\\int_0^1x", "\\sum^{n}a", "\\intop x", "\\iint f"]) assert.equal(editableLatex(latex), latex);
 	for (const latex of ["\\int\\sqrt{x}\\mathrm{d}x", "\\sum a+\\prod b"]) assert.equal(storableLatex(editableLatex(latex)), latex);
+});
+
+test("ArrowUp/Down cross between an atom's subscript and superscript, like the limits of an integral", () => {
+	// Minimal stand-in for MathLive's atom tree: branches start with a "first" atom.
+	type FakeAtom = { parent?: FakeAtom; parentBranch?: string; branches: Record<string, FakeAtom[]>; createBranch(name: string): FakeAtom[] };
+	const atom = (parent?: FakeAtom, parentBranch?: string, first = false): FakeAtom => {
+		const made: FakeAtom = {
+			parent, parentBranch, branches: {},
+			createBranch: (name) => (made.branches[name] ??= [atom(made, name, true)]),
+		};
+		if (parent && parentBranch && !first) parent.createBranch(parentBranch).push(made);
+		return made;
+	};
+	const integral = atom(atom());
+	const lower = atom(integral, "subscript");
+	const upper = atom(integral, "superscript");
+	assert.equal(scriptTarget(lower, "upward"), upper);
+	assert.equal(scriptTarget(upper, "downward"), lower);
+	// The nearest script wins, through any nesting (x^2 inside the lower limit).
+	const power = atom(atom(lower.parent, "subscript"), "superscript");
+	assert.equal(scriptTarget(power, "upward"), upper);
+	// A missing limit is created (the caret lands on its "first" atom), as MathLive does for \underset.
+	const sum = atom(atom());
+	const onlyLower = atom(sum, "subscript");
+	assert.equal(scriptTarget(onlyLower, "upward"), sum.branches.superscript![0]);
+	// Already on top, or not in a script: no target, so the caret leaves the equation.
+	assert.equal(scriptTarget(upper, "upward"), undefined);
+	assert.equal(scriptTarget(integral, "downward"), undefined);
 });
