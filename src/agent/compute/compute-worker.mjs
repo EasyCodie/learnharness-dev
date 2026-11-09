@@ -39,7 +39,7 @@ def _lh_run(code):
     # Settings a job may change are put back after it. sys.modules stays: dropping lazily
     # loaded SymPy submodules would duplicate classes and break isinstance.
     limits = (sys.getrecursionlimit(), sys.get_int_max_str_digits(), mpmath.mp.prec)
-    context, state = decimal.getcontext().copy(), random.getstate()
+    context = decimal.getcontext().copy()
     params = (_lh_params.evaluate, _lh_params.distribute, _lh_params.exp_is_pow)
     try:
         tree = ast.parse(code, "<compute>", "exec")
@@ -54,7 +54,7 @@ def _lh_run(code):
         sys.set_int_max_str_digits(limits[1])
         mpmath.mp.prec = limits[2]
         decimal.setcontext(context)
-        random.setstate(state)
+        random.seed()  # fresh entropy: restoring the old state would replay the same numbers every call
         _lh_params.evaluate, _lh_params.distribute, _lh_params.exp_is_pow = params
         sys.stdout, sys.stderr = sys.__stdout__, sys.__stderr__
         try:

@@ -136,7 +136,9 @@ describe("compute tool", { timeout: 60_000 }, () => {
 		const before = await runCompute(read);
 		await runCompute("import sys, decimal, mpmath, random, io\nfrom sympy.core.parameters import global_parameters as g\nsys.setrecursionlimit(50000)\nsys.set_int_max_str_digits(640)\ndecimal.getcontext().prec = 6\nmpmath.mp.dps = 6\ng.evaluate = False\ng.distribute = False\ng.exp_is_pow = True\nrandom.seed(1)\nsys.stdout = sys.stderr = io.StringIO()");
 		assert.equal(await runCompute(read), before);
-		assert.notEqual(await runCompute("import random\nrandom.random()"), "0.13436424411240122");
+		const draw = await runCompute("import random\nrandom.random()");
+		assert.notEqual(draw, "0.13436424411240122");
+		assert.notEqual(await runCompute("import random\nrandom.random()"), draw, "calls don't replay the same numbers");
 		assert.equal(await runCompute("x = Symbol('x')\nx + x"), "2*x");
 		assert.equal(await runCompute("print('seen')"), "seen\n");
 	});
