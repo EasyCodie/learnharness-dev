@@ -19,6 +19,7 @@ import { jobTools, type DemoInput, type PdfInput, type ResearchInput, type Visua
 import { planTools, type PlanToolContext } from "./tools/plan.ts";
 import { probeDoneTool, type ProbeDoneContext } from "./tools/probe.ts";
 import { proberGraphTools } from "./tools/graph.ts";
+import { memoryTools, type MemoryToolContext } from "./tools/memory.ts";
 import { readTool } from "./tools/read.ts";
 import { lsTool } from "./tools/ls.ts";
 import { findTool } from "./tools/find.ts";
@@ -280,6 +281,8 @@ export interface ProberToolContext extends ProbeDoneContext {
 	 *  master switch AND the agent.graphTools toggle (settings-resolution).
 	 *  Absent = the gate is closed, no map tools (tests drive this seam). */
 	graphStore?: GraphStore;
+	/** Learner memory: present = the three memory tools (not toggleable). */
+	memory?: MemoryToolContext;
 }
 
 /** The prober's tool set: probe quiz (no nodeId) + ask + the learner-fs
@@ -350,6 +353,7 @@ export function createProberTools(
 				withoutMechanics(enabled),
 			),
 			...done,
+			...(ctx.memory ? memoryTools(ctx.memory) : {}),
 		});
 }
 
@@ -406,6 +410,8 @@ export interface TeacherToolContext extends PlanToolContext {
 	spawn: (job: JobRecord, input: ResearchInput | DemoInput | VisualInput | PdfInput) => void;
 	/** Retained search-status seam; research dispatch is available keylessly. */
 	searchAvailable?: () => boolean;
+	/** Learner memory: present = the three memory tools (not toggleable). */
+	memory?: MemoryToolContext;
 }
 
 /**
@@ -450,8 +456,8 @@ export function createTeacherTools(
 	const quizzing: Record<string, AgentTool<any>> =
 		mechanics === "free" ? { explain: teachExplainToolFor(ctx) } : { quiz: teachQuizToolFor(ctx) };
 	// healToolRecord — same standard as the prober's registry (above).
-	return healToolRecord(
-		filterEnabledTools(
+	return healToolRecord({
+		...filterEnabledTools(
 			{
 			...quizzing,
 			ask_user_question: askUserQuestionTool,
@@ -472,5 +478,6 @@ export function createTeacherTools(
 		},
 		withoutMechanics(enabled),
 		),
-	);
+		...(ctx.memory ? memoryTools(ctx.memory) : {}),
+	});
 }

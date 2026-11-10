@@ -50,6 +50,7 @@ import { KeysSection } from "./keys-section.tsx";
 import { Hint } from "@/components/ui/hint";
 import { AppearanceSection, GraphSection } from "./appearance-section.tsx";
 import { KeyboardSection } from "./keyboard-section.tsx";
+import { MemorySection } from "./memory-section.tsx";
 import { ChatGPTUIProvider } from "./chatgpt-connection.tsx";
 import { NativeSubscriptionUIProvider } from "./subscription-connections.tsx";
 
@@ -59,6 +60,7 @@ import { NativeSubscriptionUIProvider } from "./subscription-connections.tsx";
 const SECTIONS = [
 	{ id: "keys", label: "Providers" },
 	{ id: "agent", label: "Agent" },
+	{ id: "memory", label: "Memory" },
 	{ id: "appearance", label: "Appearance" },
 	{ id: "graph", label: "Graph" },
 	{ id: "keyboard", label: "Keyboard", hint: "Stored on this device" },
@@ -66,7 +68,8 @@ const SECTIONS = [
 ] as const;
 type SectionId = (typeof SECTIONS)[number]["id"];
 
-/** `open(section?, row?)` — the optional ROW deep-links into the Keys
+/** `open(section?, row?)` — the optional ROW deep-links into a row: in
+ *  Memory it is a memory id (the "remembered: …" line); in the Keys
  *  section with that row unfolded (zero-keys wave: the dictation error's
  *  click lands on the Deepgram row). `row` is the KEY ID (the env-var
  *  name, e.g. DEEPGRAM_API_KEY — KeysSection's openRow state), not the
@@ -228,7 +231,7 @@ export function SettingsDialogBody({
 	 *  schema mistake caught by the validation surface). */
 	const write = useCallback(
 		async (
-			section: "general" | "agent" | "models" | "appearance" | "graph" | "compaction",
+			section: "general" | "agent" | "models" | "appearance" | "graph" | "compaction" | "memory",
 			body: object,
 		) => {
 			setError(null);
@@ -395,6 +398,15 @@ export function SettingsDialogBody({
 										onCompactionChange={(next: CompactionSettings) =>
 											void write("compaction", next)
 										}
+									/>
+								</SettingsSection>
+							)}
+							{active === "memory" && (
+								<SettingsSection title="Memory" testid="section-memory">
+									<MemorySection
+										enabled={record.memory?.enabled ?? true}
+										onEnabledChange={(on) => void write("memory", { enabled: on })}
+										initialRow={initialRow ?? undefined}
 									/>
 								</SettingsSection>
 							)}

@@ -30,6 +30,8 @@ interface StreamingToolPart {
 export function LiveToolCard({ part }: ArtifactPartProps) {
 	const p = part as StreamingToolPart;
 	const tool = p.type.replace(/^tool-/, "");
+	// Memory reads show nothing; remember shows its label only (Default 18).
+	if (tool === "memory_subject" || tool === "memory_read") return null;
 	const inp = (p.input ?? {}) as Record<string, unknown>;
 	// The headline argument (ToolCallCard's rule, shown as given): path for
 	// read/ls, pattern for find/grep, session for list_propositions.
@@ -40,7 +42,7 @@ export function LiveToolCard({ part }: ArtifactPartProps) {
 
 	const hasInput = p.input != null && Object.keys(inp).length > 0;
 	// compute's input holds the answer key it is checking: label only, never the code.
-	const hideInput = tool === "compute";
+	const hideInput = tool === "compute" || tool === "remember";
 
 	return (
 		<details

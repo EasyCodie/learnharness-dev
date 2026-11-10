@@ -28,6 +28,7 @@ import type {
 	NotesSource,
 } from "./contracts.ts";
 import type { UserSettings } from "./settings.ts";
+import type { MemoryFile } from "./contracts/memory.ts";
 
 // ─── ChatStore — the session record's home (data/chats) ─────────────────────
 
@@ -187,6 +188,16 @@ export interface SettingsStore {
 	readSettings(): UserSettings | null;
 	/** Persist the record (replace-whole). Callers pass a SANITIZED record. */
 	writeSettings(settings: UserSettings): void;
+}
+
+// ─── MemoryStore — learner memory (data/memory/memory.json) ─────────────────
+
+/** Replace-whole, like SettingsStore. An absent file reads as empty.
+ *  read() throws MemoryUnavailableError (core/memory.ts) when the file is
+ *  corrupt or stamped newer than this build; callers then never write. */
+export interface MemoryStore {
+	read(): MemoryFile;
+	write(file: MemoryFile): void;
 }
 
 // ─── PromptOverrideStore — per-segment system-prompt overrides (2026-09-19) ──

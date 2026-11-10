@@ -28,6 +28,11 @@ describe("undoableTail (Undo / Edit eligibility)", () => {
 		assert.equal(tail?.promptId, "u1");
 	});
 
+	it("walks over the memory tools: Undo reverses their effects itself", () => {
+		const tail = undoableTail([user("u1", "remember I like diagrams"), reply("a1", "toolUse", ["memory_subject", "remember"]), result("r1", "memory_subject"), result("r2", "remember"), reply("a2", "stop")]);
+		assert.equal(tail?.promptId, "u1");
+	});
+
 	it("offers it after a normal reply delivered through send_to_user (Claude Code runtime)", () => {
 		const tail = undoableTail([user("u1", "what security measures do you have"), reply("a1", "toolUse", ["send_to_user"]), result("r1", "send_to_user"), reply("a2", "stop")]);
 		assert.equal(tail?.promptId, "u1");

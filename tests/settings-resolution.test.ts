@@ -19,7 +19,7 @@ import {
 	resolveSettings,
 	resolveSlot,
 } from "../src/core/settings-resolution.ts";
-import { BACKGROUND_MODEL_ROLES, type UserSettings } from "../src/core/settings.ts";
+import { BACKGROUND_MODEL_ROLES, sanitizeUserSettings, type UserSettings } from "../src/core/settings.ts";
 
 describe("resolveSettings", () => {
 	it("null record (first boot): non-model knobs land on factory defaults; every model view is EMPTY", () => {
@@ -266,5 +266,17 @@ describe("the graph channel gates (the wave's seam honoring)", () => {
 		assert.deepEqual(eff.agent.graphTools, {});
 		const off = resolveSettings({ version: 1, agent: { graphTools: { enabled: false } } });
 		assert.deepEqual(off.agent.graphTools, { enabled: false });
+	});
+});
+describe("memory switch", () => {
+	it("is on by default and off only when the record says false", () => {
+		assert.equal(resolveSettings(null).memory.enabled, true);
+		assert.equal(resolveSettings({ version: 1, memory: {} }).memory.enabled, true);
+		assert.equal(resolveSettings({ version: 1, memory: { enabled: false } }).memory.enabled, false);
+	});
+
+	it("the sanitizer keeps a boolean and drops anything else", () => {
+		assert.deepEqual(sanitizeUserSettings({ version: 1, memory: { enabled: false } })?.memory, { enabled: false });
+		assert.deepEqual(sanitizeUserSettings({ version: 1, memory: { enabled: "off" } })?.memory, {});
 	});
 });

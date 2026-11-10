@@ -105,6 +105,15 @@ export function parseClaudeCodeSettingsBody(body: unknown): SettingsBodyResult<{
 	return { ok: true, settings: { enabled: raw.enabled } };
 }
 
+/** memory: the learner-memory master switch. Empty section resets to on. */
+export function parseMemorySettingsBody(body: unknown): SettingsBodyResult<{ enabled?: boolean }> {
+	const raw = asRecord(body);
+	if (!raw) return { ok: false, error: "Invalid JSON body" };
+	if (raw.enabled === undefined) return { ok: true, settings: {} };
+	if (typeof raw.enabled !== "boolean") return { ok: false, error: "enabled must be a boolean" };
+	return { ok: true, settings: { enabled: raw.enabled } };
+}
+
 /** agent.models: only the six known background roles; each override's
  *  fields mirror ChatSettings (model pair + independent thinkingLevel). */
 function parseRoleOverride(value: unknown, role: string): { ok: true; override: RoleModelOverride } | { ok: false; error: string } {
@@ -467,6 +476,7 @@ export const SETTINGS_SECTIONS = {
 	models: parseModelsSettingsBody,
 	dictation: parseDictationSettingsBody,
 	claudeCode: parseClaudeCodeSettingsBody,
+	memory: parseMemorySettingsBody,
 } as const;
 
 export type SettingsSectionName = keyof typeof SETTINGS_SECTIONS;

@@ -30,6 +30,9 @@ core tool surface must appear in real data here.
 - `jobs/` — five records covering kind × status: research done + aborted by
   learner, demo done, visual done, pdf error.
 - `settings.json` — the stamped settings record (version 1, model slots).
+- `memory/memory.json` — learner memory (format 1). Synthetic content written
+  by the production writer (`applyRemember` + `memoryStore.write`): a Profile
+  memory, a subject memory and a Settings-added area memory.
 
 ## Regenerating / extending
 

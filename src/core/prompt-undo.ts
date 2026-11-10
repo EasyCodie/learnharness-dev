@@ -24,6 +24,9 @@ const SIDE_EFFECT_FREE_TOOLS = new Set([
 	// The Claude Code runtime's learner-facing reply channel: display only.
 	SEND_TO_USER_TOOL,
 	"list_sessions", "list_propositions", "find_candidates",
+	// Learner memory: Undo reverses their effects itself (the memory reconcile
+	// in server/chats.ts undoLastPrompt drops entries citing removed calls).
+	"memory_subject", "memory_read", "remember",
 ]);
 
 export interface UndoableTail {

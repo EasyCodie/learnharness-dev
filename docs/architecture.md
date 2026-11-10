@@ -130,6 +130,12 @@ Prober/practice graph tools require both graph and graph-tool switches; the teac
 
 Extraction is the construction writer, not the only mutation: source/session/node deletion, simplification, and position commits also write graph files. Deleting a proposition removes chains using it; preserving graph on session deletion retains provenance while removing extraction bookkeeping.
 
+### Learner memory
+
+The app remembers the learner between sessions in [`memory/memory.json`](../src/store/memory.ts): preferences and goals, and anything he asks it to remember. It is not the knowledge graph and holds no graph nodes. Memories sit at the narrowest true level: the Profile (capped at 15, always in the prompt), a subject (its memories and area list load once `memory_subject` sets the session's subject), or an area (opened with `memory_read`). Rules live in [`core/memory.ts`](../src/core/memory.ts); the tools in [`agent/tools/memory.ts`](../src/agent/tools/memory.ts); the prompt block, Settings operations and reconcile in [`server/memory.ts`](../src/server/memory.ts). The `memory.enabled` switch removes the tools and the prompt block.
+
+Each memory is a list of entries; an entry with text sets the wording, and an in-chat entry cites its chat and `remember` tool-call id. **Undo** (and a failed or aborted settle) drops every entry citing a call no longer in the record, so a removed turn takes its saves with it and a `replaces` save rolls back to the earlier wording. Session deletion keeps memories; their evidence reads "from a deleted session". A corrupt or newer `memory.json` is never overwritten: memory is skipped for the turn and Settings shows the error.
+
 ## Storage and notifications
 
 [`config.ts`](../config.ts) anchors immutable prompt assets to the application root and mutable state to `LH_DATA_DIR` (default repo `data/`). Storage ports are semantic interfaces in [`ports.ts`](../src/core/ports.ts).
@@ -141,6 +147,7 @@ Extraction is the construction writer, not the only mutation: source/session/nod
 | Propositions, chains, checkpoints, coverage | `graph/{nodes,chains,sessions,coverage}.jsonl` |
 | Sources, organization, positions, render preferences | JSON maps under `graph/` |
 | Preferences and prompt overrides | `settings.json`, `prompts/` |
+| Learner memory | `memory/memory.json` |
 | Keys and custom-endpoint binding | Separate `auth.json`, selected by `LH_AUTH_FILE` |
 
 Adapters use synchronous filesystem operations. JSONL reads skip corrupt/invalid lines; graph derivation merges repeated assertions. Some replacements use temp-file rename, but ordinary whole-file writes are not database transactions. Same-event-loop serialization is not cross-process locking or crash atomicity. Use **one server owner per data/auth profile**.
