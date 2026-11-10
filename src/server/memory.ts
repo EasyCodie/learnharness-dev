@@ -40,26 +40,25 @@ export function memoryForTurn(
 	kind: MemoryAgentKind,
 ): { block: string; tools: MemoryToolContext } | null {
 	if (!enabled) return null;
-	let file: MemoryFile;
+	let block: string;
 	try {
-		file = stores.memoryStore.read();
+		// Inside the try: a parseable but malformed file skips memory too.
+		block = memoryPromptBlock(stores.memoryStore.read(), sessionSubject(messages), kind);
 	} catch (error) {
 		console.warn(`[memory] unavailable for this turn: ${(error as Error).message}`);
 		return null;
 	}
-	return {
-		block: memoryPromptBlock(file, sessionSubject(messages), kind),
-		tools: { chatId, chatStore: stores.chatStore, memoryStore: stores.memoryStore, onChange: changed },
-	};
+	return { block, tools: { chatId, chatStore: stores.chatStore, memoryStore: stores.memoryStore, onChange: changed } };
 }
 
 /** Drop this chat's memory entries that cite calls not in `messages`
  *  (default: the saved record). Returns how many memories were deleted.
  *  Throws MemoryUnavailableError when the file cannot be read. */
 export function reconcileMemoryWithChat(chatId: string, messages?: readonly LhMessage[]): number {
-	const file = stores.memoryStore.read();
-	const kept = messages ?? stores.chatStore.getChat(chatId)?.messages ?? [];
-	const result = reconcileWithChat(file, chatId, kept);
+	const kept = messages ?? stores.chatStore.getChat(chatId)?.messages;
+	// No record (unknown or unreadable chat): never read as "every call is gone".
+	if (!kept) return 0;
+	const result = reconcileWithChat(stores.memoryStore.read(), chatId, kept);
 	if (!result.changed) return 0;
 	stores.memoryStore.write(result.file);
 	changed();
