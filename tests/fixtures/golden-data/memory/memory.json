@@ -1,0 +1,60 @@
+{
+	"version": 1,
+	"memories": [
+		{
+			"id": "m_d0hsou",
+			"kind": "preference",
+			"entries": [
+				{
+					"at": "2026-11-10T09:00:00.000Z",
+					"by": "agent",
+					"source": {
+						"chatId": "chat_mv27rrra_feff23b6",
+						"ref": "toolu_golden_1"
+					},
+					"note": "He asked for pictures first.",
+					"stance": "confirm",
+					"text": "Wants a diagram before any algebra."
+				}
+			]
+		},
+		{
+			"id": "m_9mk1xa",
+			"kind": "preference",
+			"subject": "Economics",
+			"entries": [
+				{
+					"at": "2026-11-10T09:05:00.000Z",
+					"by": "agent",
+					"source": {
+						"chatId": "chat_mv27rrra_feff23b6",
+						"ref": "toolu_golden_2"
+					},
+					"note": "He stated his target.",
+					"stance": "confirm",
+					"text": "Aiming for a 7 in IB Economics HL, exams May 2027."
+				}
+			]
+		},
+		{
+			"id": "m_dhrjcl",
+			"kind": "preference",
+			"subject": "Economics",
+			"area": "Unit 4 – Macroeconomics",
+			"entries": [
+				{
+					"at": "2026-11-10T09:10:00.000Z",
+					"by": "learner",
+					"note": "Added by you in Settings",
+					"stance": "confirm",
+					"text": "Prefers worked numeric examples for multipliers."
+				}
+			]
+		}
+	],
+	"areas": {
+		"Economics": {
+			"Unit 4 – Macroeconomics": "AD/AS, multipliers, fiscal and monetary policy"
+		}
+	}
+}

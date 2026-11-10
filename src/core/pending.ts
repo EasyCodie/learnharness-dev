@@ -169,6 +169,7 @@ const ACTIVITY_LABELS: Record<string, string> = {
 	visual: "Making a visual…",
 	pdf: "Reading a PDF…",
 	compute: "Checking a calculation…",
+	remember: "Remembering…",
 	plan_init: "Drawing up the plan…",
 	probe_done: "Concluding the assessment…",
 };

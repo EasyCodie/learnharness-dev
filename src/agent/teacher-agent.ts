@@ -130,6 +130,9 @@ export interface AgentBuildOptions {
 	 *  <chatId>.jsonl via providerEventObserver — the GLM-truncation /
 	 *  DeepSeek-id incident layer. Absent or env-off → no observer. */
 	chatId?: string;
+	/** Learner memory (doctrine + data), appended after the composed prompt.
+	 *  Absent = the prompt is byte-identical to a build without memory. */
+	memoryBlock?: string;
 }
 
 /**
@@ -187,7 +190,8 @@ function baseAgentOptions(kind: AgentKind, opts: AgentBuildOptions, tools: Agent
 	const composedPrompt = opts.promptSwitches
 		? composeInstructions(kind, opts.promptSwitches)
 		: composedInstructions[kind]!;
-	const systemPrompt = narrationGuard ? `${composedPrompt}\n\n---\n\n${SEND_TO_USER_DELIVERY_RULE}` : composedPrompt;
+	const withMemory = opts.memoryBlock ? `${composedPrompt}\n\n---\n\n${opts.memoryBlock}` : composedPrompt;
+	const systemPrompt = narrationGuard ? `${withMemory}\n\n---\n\n${SEND_TO_USER_DELIVERY_RULE}` : withMemory;
 	// Debug recorder (owner, 2026-10-04): raw provider events when
 	// LH_PROVIDER_EVENTS=1 and the caller handed a chatId; undefined is
 	// the normal no-observer path (tests, env-off).

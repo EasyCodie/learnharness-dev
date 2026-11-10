@@ -25,6 +25,7 @@ import { CHECK_KEY_FIRST, computeTool } from "./compute.ts";
 import type { EnabledTools } from "../../core/pending.ts";
 import { jobTools, type JobToolContext } from "./jobs.ts";
 import { proberGraphTools, type GraphToolContext } from "./graph.ts";
+import { memoryTools, type MemoryToolContext } from "./memory.ts";
 import { activeProblemOf } from "../../core/native-messages.ts";
 import type { LhMessage } from "../../core/native-messages.ts";
 import { concludeResult, invalidInputResult, problemResult } from "../tool-execute.ts";
@@ -46,6 +47,8 @@ export interface PracticeToolContext {
 	 *  Each absent context (tests) = absent from the registry. */
 	graph?: GraphToolContext;
 	jobs?: JobToolContext;
+	/** Learner memory: present = the three memory tools (not toggleable). */
+	memory?: MemoryToolContext;
 }
 
 /** TURN-SCOPED GATE STATE (the BKT incident, 2026-10-05): the gates used
@@ -251,5 +254,6 @@ export function practiceTools(ctx: PracticeToolContext, enabled?: EnabledTools):
 		...(ctx.graph ? proberGraphTools(ctx.graph) : {}),
 		// The one toggle-filtered practice tool (2026-11-09): answer-key checks.
 		...(enabled?.compute === false ? {} : { compute: computeTool }),
+		...(ctx.memory ? memoryTools(ctx.memory) : {}),
 	});
 }

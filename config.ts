@@ -113,6 +113,10 @@ export const GRAPH_FORMAT_FILE = path.join(PATHS.graph, "format.json");
  */
 export const SETTINGS_FILE = path.join(DATA_ROOT, "settings.json");
 
+/** Learner memory (docs/superpowers/plans/2026-11-10-learner-memory.md): one
+ *  file, read and rewritten whole. Own format stamp, independent of chats/graph. */
+export const MEMORY_FILE = path.join(DATA_ROOT, "memory", "memory.json");
+
 /**
  * User prompt-override files (settings-storage wave, 2026-09-19): the
  * per-segment system-prompt overrides mirroring the SOURCE layout

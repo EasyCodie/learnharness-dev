@@ -53,6 +53,8 @@ import { ensureCompacted, kickCompaction, effectiveThresholdTokens } from "./com
 import { catalogContextLimits, refreshConnectionCatalog } from "./model-catalog.ts";
 import { emit } from "../core/events.ts";
 import { settledTurnResponse } from "./turn-runs.ts";
+import { memoryForTurn, reconcileMemoryAtSettle } from "./memory.ts";
+import type { MemoryToolContext } from "../agent/tools/memory.ts";
 import { asAgentMessages } from "../core/native-messages.ts";
 import {
 	ChatInputError,
@@ -170,7 +172,7 @@ setFileAccessPolicy(fileAccessPolicy);
 /** The route-facing entry: parse {chatId, input} and run one turn. */
 export async function handleChatRequest(
 	req: Request,
-	buildAgent?: (opts: AgentBuildOptions & { teaching: boolean }) => TeachingAgent,
+	buildAgent?: (opts: AgentBuildOptions & { teaching: boolean; memory?: MemoryToolContext }) => TeachingAgent,
 ): Promise<Response> {
 	let body: { chatId?: unknown; input?: unknown };
 	try {
@@ -200,7 +202,7 @@ export async function handleChatRequest(
 export async function handleChatInput(
 	chatId: string,
 	input: TurnInput,
-	buildAgent?: (opts: AgentBuildOptions & { teaching: boolean }) => TeachingAgent,
+	buildAgent?: (opts: AgentBuildOptions & { teaching: boolean; memory?: MemoryToolContext }) => TeachingAgent,
 ): Promise<Response> {
 	let record = stores.chatStore.getChat(chatId);
 	if (!record) {
@@ -446,6 +448,14 @@ export async function handleChatInput(
 		},
 		restoreAutomatic: (automaticIds, retainedIds) => restoreUncommittedAutomatic(chatId, constructed, automaticIds, retainedIds),
 	});
+	// Learner memory (plan 2026-11-10): the prompt block + tools, for the
+	// agent kind being built; null when off or memory.json is unreadable.
+	const memory = memoryForTurn(
+		effective.memory.enabled,
+		chatId,
+		record.messages,
+		record.kind === "practice" ? "practice" : teaching ? "teacher" : "prober",
+	);
 	const agentOpts: AgentBuildOptions = {
 		engine,
 		callPurpose,
@@ -460,6 +470,7 @@ export async function handleChatInput(
 		// point as the tool delta — the agent layer composes the system
 		// prompt fresh per turn, swapping in any enabled override segments.
 		promptSwitches: effective.agent.prompts,
+		...(memory ? { memoryBlock: memory.block } : {}),
 	};
 	// PRACTICE BRANCH (owner design, 2026-10-04): a kind:"practice"
 	// session builds the practitioner from turn 1 — no prober→teacher
@@ -467,7 +478,7 @@ export async function handleChatInput(
 	// problem + conclude. buildAgent stays honored (the test seam is
 	// uniform across kinds).
 	const constructed: TeachingAgent = buildAgent
-		? buildAgent({ ...agentOpts, teaching })
+		? buildAgent({ ...agentOpts, teaching, ...(memory ? { memory: memory.tools } : {}) })
 		: record.kind === "practice"
 			? createPracticeAgent(
 					{
@@ -489,6 +500,7 @@ export async function handleChatInput(
 							searchAvailable,
 						},
 						...(graphToolsEnabled(effective) ? { graph: { chatStore: stores.chatStore, graphStore: stores.graphStore } } : {}),
+						...(memory ? { memory: memory.tools } : {}),
 					},
 					agentOpts,
 				)
@@ -502,6 +514,7 @@ export async function handleChatInput(
 						// The registry drop's signal (2026-09-20): no live engine
 						// = no research tool in the teacher's registry.
 						searchAvailable,
+						...(memory ? { memory: memory.tools } : {}),
 					},
 					agentOpts,
 				)
@@ -520,6 +533,7 @@ export async function handleChatInput(
 						// knowledge graph through tools when the gate opens —
 						// graph master switch AND the agent.graphTools toggle.
 						...(graphToolsEnabled(effective) ? { graphStore: stores.graphStore } : {}),
+						...(memory ? { memory: memory.tools } : {}),
 					},
 					agentOpts,
 				);
@@ -584,12 +598,16 @@ export async function handleChatInput(
 				const persisted = stores.chatStore.getChat(chatId)?.messages ?? [];
 				reconcileUserSteers(chatId, persisted);
 				settleSteers(chatId, persisted, true, constructed);
+				// A memory must never cite a call that was not saved.
+				reconcileMemoryAtSettle(chatId);
 			},
 			onFinish: (turnMessages, isAborted) => {
 				// Wave B: append only messages past the temporary agent prefix.
 				// Retry's saved record still includes its earlier failed attempts.
 				const stamped = persistTurn(stores.chatStore, chatId, persistBaseCount, turnMessages, isAborted);
 				noteSteersDurable(chatId, stores.chatStore.getChat(chatId)?.messages ?? stamped);
+				// A memory must never cite a call that was not saved (aborted turns).
+				reconcileMemoryAtSettle(chatId);
 				// usage log append (idempotent per turn id) — the stats bar
 				// refolds this on the client after the turn settles. The
 				// provenance message is the turn's FIRST new assistant message.

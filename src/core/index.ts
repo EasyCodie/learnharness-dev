@@ -47,6 +47,7 @@ export * from "./native-messages.ts";
 export * from "./compaction.ts";
 export * from "./input-events.ts";
 export * from "./prompt-undo.ts";
+export * from "./memory.ts";
 export { parseFilePaths, parseLearnerText, quoteFilePath, filePathLabel, isDirectoryReference, directoryReferencePath } from "./file-paths.ts";
 export type { FilePathPart, LearnerTextPart } from "./file-paths.ts";
 // Wave D (owner-approved 2026-09-26): the client view model — the grouping

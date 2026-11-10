@@ -484,6 +484,8 @@ export interface UserSettings {
 	appearance?: AppearanceSettings;
 	graph?: GraphSettings;
 	compaction?: CompactionSettings;
+	/** Learner memory master switch (absent = on). */
+	memory?: { enabled?: boolean };
 	[key: string]: unknown;
 }
 
@@ -510,6 +512,7 @@ export interface FactorySettings {
 	};
 	graph: Required<GraphSettings>;
 	compaction: Required<CompactionSettings>;
+	memory: { enabled: boolean };
 }
 
 export const FACTORY_SETTINGS: FactorySettings = {
@@ -526,6 +529,7 @@ export const FACTORY_SETTINGS: FactorySettings = {
 	},
 	graph: { enabled: true, rendering: true, extractionChunkTokens: 4096 },
 	compaction: { thresholdTokens: 150_000 },
+	memory: { enabled: true },
 };
 
 /** The chunk budget's validated floor (GraphSettings.extractionChunkTokens
@@ -830,6 +834,12 @@ export function sanitizeUserSettings(raw: unknown): UserSettings | null {
 	if (r.claudeCode !== undefined) {
 		const raw = r.claudeCode;
 		out.claudeCode = raw !== null && typeof raw === "object" && !Array.isArray(raw)
+			&& typeof (raw as Record<string, unknown>).enabled === "boolean"
+			? { enabled: (raw as { enabled: boolean }).enabled } : {};
+	}
+	if (r.memory !== undefined) {
+		const raw = r.memory;
+		out.memory = raw !== null && typeof raw === "object" && !Array.isArray(raw)
 			&& typeof (raw as Record<string, unknown>).enabled === "boolean"
 			? { enabled: (raw as { enabled: boolean }).enabled } : {};
 	}

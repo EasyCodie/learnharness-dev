@@ -39,6 +39,8 @@ const { chatStore } = await import("../src/store/chats.ts");
 const { graphStore } = await import("../src/store/graph.ts");
 const { jobStore } = await import("../src/store/jobs.ts");
 const { settingsStore } = await import("../src/store/settings.ts");
+const { memoryStore } = await import("../src/store/memory.ts");
+const { memoryPromptBlock, memoryText, subjectsOf } = await import("../src/core/memory.ts");
 const { readRenderSettings } = await import("../src/store/render-settings.ts");
 const { getGraph, deriveView } = await import("../src/core/graph.ts");
 const { sanitizeRenderSettings } = await import("../src/core/render-settings.ts");
@@ -220,6 +222,14 @@ test("settings: the stamped record parses", () => {
 });
 
 // ── read-only: readers never write ──────────────────────────────────────────
+
+test("memory: the learner-memory file parses and projects", () => {
+	const file = memoryStore.read();
+	assert.equal(file.version, 1);
+	assert.deepEqual(subjectsOf(file), ["Economics"]);
+	assert.equal(memoryText(file.memories[0]!), "Wants a diagram before any algebra.");
+	assert.match(memoryPromptBlock(file, "Economics", "teacher"), /### Profile \(1 of 15\)[\s\S]*Unit 4 – Macroeconomics: AD\/AS/);
+});
 
 test("read-only: after every read above, the data dir is byte-identical to the fixture source", () => {
 	const after = snapshotTree(TMP);

@@ -40,6 +40,10 @@ The available segment list always comes from current source discovery. An overri
 
 See [architecture](../../../docs/architecture.md#teaching-and-practice) for runtime phases, registry differences and pause mechanics; [teaching methodology](../../../docs/teaching-methodology.md) for the method. Background workers and extraction have their own instructions in their implementation modules; this loader is not a catalog of every prompt in the application.
 
+## Learner memory block
+
+When the `memory.enabled` setting is on and `memory.json` is readable, the turn handler appends one more block after the composed prompt (before the Claude Code delivery rule): a fixed memory doctrine plus the Profile, the subject list and the session subject's index ([`memoryPromptBlock`](../../core/memory.ts)). It is not a fragment, so it is not editable under Settings → Agent → prompts, and it is absent (the prompt byte-identical) when memory is off. A change to the Profile or the subject index changes the system prompt, so the next reply starts uncached.
+
 ## Editing fragments
 
 - Put agent-specific doctrine in that agent's directory. Use `shared/` only for guidance appropriate to every agent that composes it; check practice's explicit allowlist.

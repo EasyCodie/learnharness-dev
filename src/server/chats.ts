@@ -10,6 +10,8 @@ import { stores } from "./stores.ts";
 import { isTurnRunning } from "./turn-liveness.ts";
 import { clearTurnFailure } from "./turn-runs.ts";
 import { discardChatDeliveries } from "./jobs.ts";
+import { reconcileMemoryWithChat } from "./memory.ts";
+import { MemoryUnavailableError } from "../core/memory.ts";
 
 /**
  * Server-side chat entries for the transport layer (app/api/chats*,
@@ -136,7 +138,7 @@ async function windDownExtraction(chatId: string): Promise<Extract<ChatDeleteOut
 
 export type PromptUndoOutcome =
 	| { ok: false; status: 404 | 400 | 409 | 503; error: string }
-	| { ok: true; text: string; stats: ChatDeletionStats; graphRevision: number };
+	| { ok: true; text: string; stats: ChatDeletionStats; graphRevision: number; memoriesRemoved: number };
 
 /**
  * Undo the last prompt (owner, 2026-11-10): wind down this chat's
@@ -163,13 +165,24 @@ export async function undoLastPrompt(chatId: string, promptId: string): Promise<
 	const record = stores.chatStore.getChat(chatId)!;
 	const tail = undoableTail(record.messages)!;
 	const removed = record.messages.slice(tail.cutAt);
+	const kept = record.messages.slice(0, tail.cutAt);
+	// Memory first: a failed memory write fails Undo before the graph or the
+	// transcript is touched. An unreadable memory.json is skipped (Ivan,
+	// 2026-11-10); a later settle's reconcile removes the orphans.
+	let memoriesRemoved = 0;
+	try {
+		memoriesRemoved = reconcileMemoryWithChat(chatId, kept);
+	} catch (error) {
+		if (!(error instanceof MemoryUnavailableError)) throw error;
+		console.warn(`[memory] Undo skipped memory: ${error.message}`);
+	}
 	// Zero-token slots (learner text) share one empty fingerprint: never a coverage key.
 	const fps = new Set(coverageSlots(record.messages).slice(tail.cutAt).filter((slot) => slot.tokens > 0).map((slot) => slot.fp));
 	const stats = deleteMessageTraces(stores.graphStore, chatId, new Set(removed.map((m) => m.id)), fps);
-	stores.chatStore.saveMessages(chatId, record.messages.slice(0, tail.cutAt));
+	stores.chatStore.saveMessages(chatId, kept);
 	clearTurnFailure(chatId);
 	emit("record-changed", { chatId });
-	return { ok: true, text: tail.text, stats, graphRevision: graphRevision() };
+	return { ok: true, text: tail.text, stats, graphRevision: graphRevision(), memoriesRemoved };
 }
 
 /** Source deletion has already purged the selected batch's graph traces.

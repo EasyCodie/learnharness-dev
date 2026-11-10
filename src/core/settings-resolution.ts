@@ -98,6 +98,8 @@ export interface EffectiveSettings {
 	/** Compaction (owner round 14): resolved concrete — absent record
 	 *  section resolves to the factory 150k. */
 	compaction: Required<CompactionSettings>;
+	/** Learner memory master switch, on unless the record says false. */
+	memory: { enabled: boolean };
 	/** Custom endpoint, resolved concrete: baseUrl defaults "", models and
 	 *  user pins default to empty. */
 	customProvider: { baseUrl: string; models: CustomModel[]; overrides: Record<string, CustomModelOverride>; manualModels: string[] };
@@ -230,6 +232,7 @@ export function resolveSettings(record: UserSettings | null): EffectiveSettings 
 		compaction: {
 			thresholdTokens: record?.compaction?.thresholdTokens ?? FACTORY_SETTINGS.compaction.thresholdTokens,
 		},
+		memory: { enabled: record?.memory?.enabled ?? FACTORY_SETTINGS.memory.enabled },
 		customProvider: {
 			baseUrl: record?.customProvider?.baseUrl ?? "",
 			models: record?.customProvider?.models ?? [],
