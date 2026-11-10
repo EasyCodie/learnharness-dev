@@ -12,6 +12,25 @@ import {
 import { quoteFilePath } from "../src/core/file-paths.ts";
 import { closeKeyboard, editableLatex, isMathToggle, openKeyboard, scriptTarget, storableLatex } from "../components/math-chip.tsx";
 
+/** Stands in for MathLive's field, which cannot mount under linkedom. It never fires `mount` by itself. */
+function FakeField() {
+	if (FakeField.fail) throw new Error("MathLive load failed");
+	const field: any = document.createElement("span");
+	return Object.assign(field, {
+		value: "", selection: null, placeholderSymbol: "", position: 0, lastOffset: 0,
+		getValue: (format?: string) => (format === "latex-expanded" ? field.value : ""),
+		hasFocus: () => document.activeElement === field,
+		executeCommand: ([, text]: [string, string]) => { field.value += text; },
+	});
+}
+FakeField.fail = false;
+FakeField.fontsDirectory = null as string | null;
+FakeField.soundsDirectory = null as string | null;
+// Faked only from the first test that needs a working field: the tests before it rely on the
+// real MathLive failing to load under linkedom.
+let faked: unknown;
+const fakeMathLive = () => { faked ??= mock.module("mathlive", { namedExports: { MathfieldElement: FakeField } }); };
+
 function editor() {
 	const { document } = parseHTML("<html><body><div id='editor'></div></body></html>");
 	return document.getElementById("editor")!;
@@ -154,7 +173,8 @@ afterEach(async () => { await cleanup?.(); cleanup = undefined; });
 async function fixture(initial: string, singleLine = false) {
 	const { window: win, document: doc } = parseHTML("<html><body><div id='root'></div><button id='elsewhere'></button></body></html>");
 	let active: Element = doc.body;
-	Object.defineProperty(doc, "activeElement", { get: () => active });
+	// Like a browser: focus falls back to the body when the focused element is removed.
+	Object.defineProperty(doc, "activeElement", { get: () => active.isConnected ? active : doc.body });
 	const selection = {
 		anchorNode: null as Node | null, anchorOffset: 0, focusNode: null as Node | null, focusOffset: 0,
 		setBaseAndExtent(anchorNode: Node, anchorOffset: number, focusNode: Node, focusOffset: number) {
@@ -163,8 +183,9 @@ async function fixture(initial: string, singleLine = false) {
 	};
 	Object.assign(doc, { getSelection: () => selection, oninput: null });
 	win.HTMLElement.prototype.focus = function () { active = this; };
+	Object.assign(win, { mathVirtualKeyboard: { layouts: [], boundingRect: { height: 0 }, addEventListener() {}, show() {}, hide() {} } });
 	const previous = new Map<string, PropertyDescriptor | undefined>();
-	for (const [name, value] of Object.entries({ React, window: win, document: doc, HTMLElement: win.HTMLElement, Element: win.Element, Event: win.Event, CustomEvent: win.CustomEvent, IS_REACT_ACT_ENVIRONMENT: true })) {
+	for (const [name, value] of Object.entries({ React, window: win, document: doc, HTMLElement: win.HTMLElement, Element: win.Element, Event: win.Event, CustomEvent: win.CustomEvent, requestAnimationFrame: (run: () => void) => run(), IS_REACT_ACT_ENVIRONMENT: true })) {
 		previous.set(name, Object.getOwnPropertyDescriptor(globalThis, name));
 		Object.defineProperty(globalThis, name, { configurable: true, writable: true, value });
 	}
@@ -180,6 +201,8 @@ async function fixture(initial: string, singleLine = false) {
 	await act(async () => { draw(); });
 	cleanup = async () => {
 		await act(async () => { reactRoot.unmount(); });
+		// A folding math keyboard removes itself on a timer that still needs these globals.
+		if (doc.querySelector(".lh-math-keyboard")) await new Promise((resolve) => setTimeout(resolve, 250));
 		for (const [name, descriptor] of previous) {
 			if (descriptor) Object.defineProperty(globalThis, name, descriptor);
 			else delete (globalThis as Record<string, unknown>)[name];
@@ -208,6 +231,25 @@ async function fixture(initial: string, singleLine = false) {
 			await event("input", { inputType });
 		},
 	};
+}
+
+const settle = () => act(() => new Promise((resolve) => setTimeout(resolve, 0)));
+
+async function openField(f: { root: HTMLElement; doc: Document }) {
+	await settle();
+	const field = f.root.querySelector(".lh-math-field > *") as HTMLElement;
+	if (!field) throw new Error("expected field under .lh-math-field");
+	await act(async () => {
+		field.dispatchEvent(new f.doc.defaultView!.Event("mount"));
+	});
+	return field;
+}
+
+async function edit(field: HTMLElement, latex: string) {
+	(field as any).value = latex;
+	await act(async () => {
+		field.dispatchEvent(new field.ownerDocument.defaultView!.Event("input", { bubbles: true }));
+	});
 }
 
 test("native typing, token insertion/deletion and undo/redo share one history", async () => {
@@ -764,4 +806,71 @@ test("the math keyboard unfolds in the typing box, above its anchor row, and lin
 			else delete (globalThis as Record<string, unknown>)[name];
 		}
 	}
+});
+test("clicking another equation while one is open closes the first and opens the clicked one", async () => {
+	fakeMathLive();
+	const f = await fixture("\\(x\\) and \\(y\\)");
+	f.select(0);
+	await f.event("keydown", { key: "ArrowRight" });
+	await edit(await openField(f), "x+1");
+	assert.equal(f.value, "\\(x+1\\) and \\(y\\)");
+	await act(async () => { f.root.querySelector('[role="img"][aria-label="y"]')!.dispatchEvent(new f.doc.defaultView!.Event("mousedown", { bubbles: true, cancelable: true })); });
+	const second = await openField(f);
+	assert.ok(f.root.querySelector('[role="img"][aria-label="x+1"]'), "first chip shows its edit");
+	await edit(second, "y2");
+	assert.equal(f.value, "\\(x+1\\) and \\(y2\\)");
+	await act(async () => { second.dispatchEvent(Object.assign(new f.doc.defaultView!.Event("keydown", { bubbles: true, cancelable: true }), { key: "Enter" })); });
+	await f.event("keydown", { key: "z", metaKey: true });
+	assert.equal(f.value, "\\(x+1\\) and \\(y\\)");
+	await f.event("keydown", { key: "z", metaKey: true });
+	assert.equal(f.value, "\\(x\\) and \\(y\\)");
+});
+
+test("clicking an equation while a new empty one is open removes the empty one and opens the clicked one", async () => {
+	fakeMathLive();
+	const f = await fixture("a \\(y\\)");
+	f.select(1);
+	await f.event("keydown", { key: "e", ctrlKey: true });
+	await openField(f);
+	assert.equal(f.value, "a\\(\\) \\(y\\)");
+	await act(async () => { f.root.querySelector('[role="img"][aria-label="y"]')!.dispatchEvent(new f.doc.defaultView!.Event("mousedown", { bubbles: true, cancelable: true })); });
+	await edit(await openField(f), "y2");
+	assert.equal(f.value, "a \\(y2\\)");
+});
+
+test("an equation whose editor fails to load closes and gives the keyboard back", async () => {
+	fakeMathLive();
+	FakeField.fail = true;
+	try {
+		const f = await fixture("a");
+		f.select(1);
+		await f.event("keydown", { key: "e", code: "KeyE", ctrlKey: true });
+		await settle();
+		assert.equal(f.value, "a");
+		assert.equal((await f.event("keydown", { key: "b" })).defaultPrevented, false);
+	} finally { FakeField.fail = false; }
+});
+
+test("an equation toggled inside a code span stays text and undoes in one step", async () => {
+	fakeMathLive();
+	const f = await fixture("`ab`");
+	f.select(2);
+	await f.event("keydown", { key: "e", code: "KeyE", ctrlKey: true });
+	await settle();
+	assert.equal(f.value, "`a\\(\\)b`");
+	await f.event("keydown", { key: "z", metaKey: true });
+	assert.equal(f.value, "`ab`");
+});
+
+test("focus that left before the editor mounted stays where it went", async () => {
+	fakeMathLive();
+	const f = await fixture("\\(x\\)");
+	f.select(0);
+	await f.event("keydown", { key: "ArrowRight" });
+	await settle();
+	const field = f.root.querySelector(".lh-math-field > *")!;
+	(f.doc.getElementById("elsewhere") as HTMLElement).focus();
+	await act(async () => { field.dispatchEvent(new f.doc.defaultView!.Event("mount")); });
+	assert.equal(f.doc.activeElement!.id, "elsewhere");
+	assert.equal(f.root.querySelector(".lh-math-field"), null);
 });

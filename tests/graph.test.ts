@@ -1146,3 +1146,87 @@ describe("deriveView (the argument's geometry)", () => {
 		assert.deepEqual(view.impLinks, [{ id: "arg_ab", premises: ["a", "b"], conclusion: "c" }]);
 	});
 });
+
+// ─── Undo / Edit of a cut-off prompt (owner, 2026-11-10) ─────────────────────
+
+import { deleteMessageTraces } from "../src/core/graph-deletion.ts";
+import { undoLastPrompt } from "../src/server/chats.ts";
+
+describe("undo of a cut-off prompt purges its whole extraction batch", () => {
+	function aborted(id: string, text: string): LhMessage[] {
+		return [{
+			id, role: "assistant", content: [{ type: "text", text }], api: "openai-completions", provider: "openrouter", model: "test",
+			usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, stopReason: "aborted", timestamp: Date.now(),
+		} as never];
+	}
+
+	function scenario() {
+		const chat = fixtureChat("Undo session", [
+			user("uu0", "hello"),
+			teacher("ut0", "Earlier teaching."),
+			user("uu1", "a prompt with a wrong claim"),
+			aborted("ua1", "Partial answ"),
+		].flat());
+		const slots = coverageSlots(chat.messages);
+		// Production covers only extraction-visible slots (learner text is invisible).
+		const cov = (i: number[], foldedAt: string) => i.filter((k) => slots[k]!.tokens > 0).map((k) => ({ chatId: chat.id, fp: slots[k]!.fp, tokens: slots[k]!.tokens, foldedAt }));
+		const F1 = "2026-11-10T00:00:01.000Z";
+		const F2 = "2026-11-10T00:00:02.000Z";
+		mergeFindings(chat.id, { propositions: [{ id: "p", name: "Earlier", statement: "Undo earlier statement", aliases: [], messageId: "ut0" }], chains: [] },
+			{ links: [] }, graphDeps, { foldedAt: F1, coverage: cov([0, 1], F1) });
+		const earlierId = getGraph(graphStore).nodes.find((n) => n.statement === "Undo earlier statement")!.id;
+		// Batch 2 covers the earlier teacher message again plus the cut-off
+		// pair: a prompt-derived node anchored to ut0, a link-append onto the
+		// earlier node, a node from the partial reply, and a chain.
+		mergeFindings(chat.id, {
+			propositions: [
+				{ id: "q1", name: "Prompt-derived", statement: "Undo prompt-derived statement", aliases: [], messageId: "ut0" },
+				{ id: "q2", name: "Earlier again", statement: "Undo earlier, rephrased", aliases: ["batch-2 phrasing"], messageId: "ut0" },
+				{ id: "q3", name: "Partial", statement: "Undo partial statement", aliases: [], messageId: "ua1" },
+			],
+			chains: [{ premises: ["q2"], conclusion: "q1" }],
+		}, { links: [{ id: "q2", linkTo: earlierId }] }, graphDeps, { foldedAt: F2, coverage: cov([1, 2, 3], F2) });
+		return { chat, slots, earlierId };
+	}
+
+	it("removes every line the batch added, keeps the earlier batch, and reopens the batch's surviving messages", () => {
+		const { chat, slots, earlierId } = scenario();
+		const stats = deleteMessageTraces(graphStore, chat.id, new Set(["uu1", "ua1"]), new Set([slots[3]!.fp]));
+		assert.equal(stats.nodesRemoved, 2, "the prompt-derived node and the partial-reply node die");
+		assert.equal(stats.chainsRemoved, 1, "the batch's chain dies even though it carries no message anchor");
+		const graph = getGraph(graphStore);
+		assert.equal(graph.nodes.some((n) => n.statement.startsWith("Undo prompt-derived") || n.statement.startsWith("Undo partial")), false);
+		const earlier = graph.nodes.find((n) => n.id === earlierId)!;
+		assert.ok(!earlier.aliases.includes("batch-2 phrasing"), "the batch's link-append is gone");
+		assert.deepEqual(earlier.provenance, [{ chatId: chat.id, messageId: "ut0" }], "the earlier batch's anchor stays");
+		const rows = graphStore.readCoverage().filter((row) => row.chatId === chat.id);
+		assert.deepEqual(rows.map((row) => row.foldedAt), ["2026-11-10T00:00:01.000Z"],
+			"only the earlier batch stays covered; ut0's batch-2 row reopens for re-extraction");
+	});
+
+	it("keeps a batch-created node another session linked to, stripped of this session's traces", () => {
+		const { chat, slots } = scenario();
+		const partialId = getGraph(graphStore).nodes.find((n) => n.statement === "Undo partial statement")!.id;
+		const other = fixtureChat("Undo other session", [user("ou1", "x"), teacher("ot1", "y")].flat());
+		mergeFindings(other.id, { propositions: [{ id: "o", name: "Same", statement: "Same as partial", aliases: [], messageId: "ot1" }], chains: [] },
+			{ links: [{ id: "o", linkTo: partialId }] }, graphDeps, sessionSource(other.id));
+		deleteMessageTraces(graphStore, chat.id, new Set(["uu1", "ua1"]), new Set([slots[3]!.fp]));
+		const node = getGraph(graphStore).nodes.find((n) => n.id === partialId)!;
+		assert.equal(node.statement, "Undo partial statement", "identity survives (owner, shared-node rule)");
+		assert.ok(node.provenance.every((pt) => pt.chatId === other.id));
+	});
+
+	it("undoLastPrompt truncates the record, returns the prompt, and refuses during a turn or for a stale id", async () => {
+		const { chat } = scenario();
+		beginTurn(chat.id);
+		assert.equal((await undoLastPrompt(chat.id, "uu1")).ok, false, "a running turn refuses");
+		endTurn(chat.id);
+		const stale = await undoLastPrompt(chat.id, "uu0");
+		assert.equal(stale.ok || stale.status, 400);
+		const done = await undoLastPrompt(chat.id, "uu1");
+		assert.ok(done.ok);
+		assert.equal(done.text, "a prompt with a wrong claim");
+		assert.deepEqual(chatStore.getChat(chat.id)!.messages.map((m) => m.id), ["uu0", "ut0"]);
+		assert.deepEqual(scopedGraph([chat.id]).nodes.map((n) => n.statement), ["Undo earlier statement"], "only the earlier batch remains");
+	});
+});

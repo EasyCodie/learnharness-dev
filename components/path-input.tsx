@@ -31,7 +31,7 @@ export type PathInputProps = Omit<React.HTMLAttributes<HTMLDivElement>, "childre
 type Controller = {
 	external: (value: string) => void;
 	remember: () => void;
-	openMath: (start: number, caret: "start" | "end") => void;
+	openChip: (host: HTMLElement) => void;
 	mathChange: (latex: string) => void;
 	mathExit: (side: MathExit, refocus: boolean) => void;
 	mathReady: (field: MathfieldElement) => void;
@@ -114,18 +114,20 @@ export const PathInput = React.forwardRef<HTMLDivElement, PathInputProps>(functi
 		}
 		function openMath(start: number, caret: "start" | "end", before = snapshot()) {
 			const chip = hosts.find((host): host is ChipHost & { latex: string } => "latex" in host && host.start === start);
-			if (!chip) return;
+			if (!chip) return false;
 			if (math) announce(false);
 			math = { host: chip.host, start, source: current.slice(start, mathEnd(chip)), before };
 			typed = "";
 			setActive({ host: chip.host, caret });
 			announce(true);
+			return true;
 		}
 		function insertMath() {
 			const before = snapshot();
 			const { start } = atomicPathRange(current, saved);
 			change(replacePathSelection(current, saved, EMPTY_MATH), false, before);
-			openMath(start, "end", before);
+			// Inside a code span the \(\) stays text and no editor opens to record the undo step on exit.
+			if (!openMath(start, "end", before)) history.push(before);
 		}
 		function toggleEvent() {
 			if (math) { mathExit("after", true); return; }
@@ -133,6 +135,20 @@ export const PathInput = React.forwardRef<HTMLDivElement, PathInputProps>(functi
 			root.focus();
 			restorePathSelection(root, saved);
 			insertMath();
+		}
+		function openChip(host: HTMLElement) {
+			const mathEntries = hosts.filter((h): h is ChipHost & { latex: string } => "latex" in h);
+			let k = mathEntries.findIndex((h) => h.host === host);
+			if (k === -1) return;
+			if (math) {
+				const j = mathEntries.findIndex((h) => h.host === math!.host);
+				const wasEmpty = math.source === EMPTY_MATH;
+				mathExit("after", false);
+				if (wasEmpty && j !== -1 && j < k) k--;
+			}
+			const freshMathEntries = hosts.filter((h): h is ChipHost & { latex: string } => "latex" in h);
+			const target = freshMathEntries[k];
+			if (target) openMath(target.start, "end");
 		}
 		function mathChange(latex: string) {
 			if (!math) return;
@@ -314,7 +330,7 @@ export const PathInput = React.forwardRef<HTMLDivElement, PathInputProps>(functi
 			});
 		}
 		controllerRef.current = {
-			remember, openMath, mathChange, mathExit,
+			remember, openChip, mathChange, mathExit,
 			mathReady(field) {
 				if (!math) return;
 				math.field = field;
@@ -402,7 +418,7 @@ export const PathInput = React.forwardRef<HTMLDivElement, PathInputProps>(functi
 			: <MathChip
 				latex={chip.latex}
 				caret={active?.host === chip.host ? active.caret : null}
-				onOpen={() => controllerRef.current?.openMath(chip.start, "end")}
+				onOpen={() => controllerRef.current?.openChip(chip.host)}
 				onChange={(latex) => controllerRef.current?.mathChange(latex)}
 				onExit={(side, refocus) => controllerRef.current?.mathExit(side, refocus)}
 				onReady={(field) => controllerRef.current?.mathReady(field)}

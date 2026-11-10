@@ -165,7 +165,9 @@ export function mergeFindings(
 	//    equivalence links (re-encountered knowledge merges in).
 	const existingIds = new Set(ledgers.readNodes().map((n) => n.id));
 	const mapping = new Map<string, string>();
-	const now = new Date().toISOString();
+	// A chat batch stamps every line with its coverage foldedAt, so Undo of a
+	// last prompt can find and purge exactly this run (owner, 2026-11-10).
+	const now = source.coverage !== undefined ? source.foldedAt : new Date().toISOString();
 	const linkOf = new Map(verdicts.links.map((l) => [l.id, l.linkTo]));
 
 	// VERDICTS-ONLY (owner, 2026-09-28): the propositions come from the

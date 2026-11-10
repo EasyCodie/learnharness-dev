@@ -23,6 +23,7 @@ import { readTool } from "./tools/read.ts";
 import { lsTool } from "./tools/ls.ts";
 import { findTool } from "./tools/find.ts";
 import { grepTool } from "./tools/grep.ts";
+import { CHECK_KEY_FIRST, computeTool } from "./tools/compute.ts";
 import { createShowImageTool } from "./tools/show-image.ts";
 import { healToolRecord } from "./tools/heal.ts";
 import type { GraphStore } from "../core/ports.ts";
@@ -158,6 +159,7 @@ function quizDescription(delta: { name: "quiz" | "probe"; nodeId: boolean; types
 		(delta.nodeId
 			? "Set `nodeId` (required) to the plan node this question is about — validated at call time against the session's plan map. For off-map checks use ask_user_question. "
 			: "") +
+		CHECK_KEY_FIRST +
 		"ONE question per turn: call a single " +
 		delta.name +
 		", then end your turn — his answer determines the next.";
@@ -191,6 +193,7 @@ function explainDescription(name: "explain" | "recall", nodeId: boolean): string
 		(nodeId
 			? "Set `nodeId` (required) to the plan node this question is about — validated at call time against the session's plan map. "
 			: "") +
+		CHECK_KEY_FIRST +
 		"ONE question per turn: call a single " + name + ", then end your turn — his answer determines the next."
 	);
 }
@@ -335,6 +338,8 @@ export function createProberTools(
 				// remains available without a search-provider key.
 				...(jobs.research ? { research: jobs.research } : {}),
 				pdf: jobs.pdf!,
+				// Answer-key checks (2026-11-09): toggleable, on by default.
+				compute: computeTool,
 				// The map reader (wave 7): present only when the settings gate
 				// opened.
 				...(ctx.graphStore
@@ -463,6 +468,7 @@ export function createTeacherTools(
 			show_image: createShowImageTool(ctx),
 			...planTools(ctx),
 			...jobTools({ chatId: ctx.chatId, jobStore: ctx.jobStore, spawn: ctx.spawn, searchAvailable: ctx.searchAvailable }),
+			compute: computeTool,
 		},
 		withoutMechanics(enabled),
 		),

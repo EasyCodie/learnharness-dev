@@ -2,6 +2,7 @@
 
 import { createContext, Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useChatSession } from "@/components/session";
+import { PromptEditor, withRestoredPrompt } from "@/components/prompt-edit";
 import { visibleQueuedSteers } from "@/components/session-core";
 import { SetupDialog } from "@/components/setup-dialog";
 import { Hint } from "@/components/ui/hint";
@@ -77,6 +78,7 @@ import {
 	malformedQuestionsOf,
 	dismissedAnswer,
 	endsInFailedTurn,
+	undoableTail,
 	findPendingToolCall,
 	phaseAt3,
 	phaseTimeline,
@@ -257,7 +259,7 @@ export function Chat({
 	// (core/view.ts projectView); sends are ONE explicit input event each
 	// ({chatId, input} — the stash indirection died with the SDK), and the
 	// turn stream is the VERBATIM AgentEvent passthrough the server emits.
-	const { messages, nativeMessages, hasConfirmedConversation, contextTokens, send, continueIfOwed, steer, steerQueue, submitAnswer, dismissQuestion, dismissProblem, questionDraft, saveQuestionDraft, setMessages, adoptRecord, status, error, stop, clearError, resumeStream, setReattachSettled } =
+	const { messages, nativeMessages, hasConfirmedConversation, contextTokens, send, continueIfOwed, steer, steerQueue, submitAnswer, dismissQuestion, dismissProblem, questionDraft, saveQuestionDraft, setMessages, adoptRecord, undoPrompt, status, error, stop, clearError, resumeStream, setReattachSettled } =
 		useChatSession({ chatId, initialMessages, initialError, initiallyInFlight });
 
 	const sessionFindScopeRef = useRef<HTMLDivElement | null>(null);
@@ -752,6 +754,29 @@ export function Chat({
 	// recovers from it. Later compaction requires new input instead.
 	const retryable = (status === "ready" || status === "error") && !busy && !compacting && endsInFailedTurn(nativeMessages);
 	const retryFailedTurn = () => retryFailedResponse(send, draftRef);
+	// Undo / Edit of the last prompt (owner, 2026-11-10): the server
+	// re-checks the same rule (core/prompt-undo.ts) against saved truth.
+	const undoTail = !busy && !compacting ? undoableTail(nativeMessages) : null;
+	const [editingPromptId, setEditingPromptId] = useState<string | null>(null);
+	const [undoing, setUndoing] = useState(false);
+	const undoToComposer = async (promptId: string) => {
+		setUndoing(true);
+		const text = await undoPrompt(promptId);
+		setUndoing(false);
+		if (text === null) return;
+		applyText(withRestoredPrompt(text, textRef.current));
+	};
+	const sendEditedPrompt = async (promptId: string, edited: string) => {
+		setUndoing(true);
+		const text = await undoPrompt(promptId);
+		setUndoing(false);
+		if (text === null) return; // refusal surfaced; the editor stays open
+		setEditingPromptId(null);
+		// The refusal flow restores draftRef into the composer: keep the
+		// learner's unsent composer draft alongside the edited prompt.
+		draftRef.current = withRestoredPrompt(edited, textRef.current);
+		void send({ type: "text", text: edited });
+	};
 	const sendAllowed = !pending && !activeProblem && !compacting;
 
 	/* THE PRACTICE PAUSE (owner round 16): between problems — practice
@@ -1516,10 +1541,43 @@ export function Chat({
 												{/* The rail GROUPS (owner round 4, 2026-10-05): the YOU heading
 												    sits INSIDE the rail, same mono-xs register and same 1ch
 												    rail as the thinking rows — one quote geometry. */}
-												<div className="font-medium uppercase tracking-wide text-muted-foreground">You</div>
-												<div className="lh-prose whitespace-pre-wrap text-foreground">
-													<PathText text={m.parts.filter((p) => p.type === "text").map((p) => p.text).join("\n")} />
+												<div className="flex items-center justify-between gap-2">
+													<div className="font-medium uppercase tracking-wide text-muted-foreground">You</div>
+													{undoTail?.promptId === m.id && editingPromptId !== m.id && (
+														<div className="flex items-center gap-1.5 normal-case text-muted-foreground">
+															<button
+																type="button"
+																data-testid="prompt-edit"
+																disabled={undoing}
+																onClick={() => setEditingPromptId(m.id)}
+																className="transition-colors hover:text-foreground disabled:opacity-50"
+															>
+																Edit
+															</button>
+															<span aria-hidden>·</span>
+															<button
+																type="button"
+																data-testid="prompt-undo"
+																disabled={undoing}
+																onClick={() => void undoToComposer(m.id)}
+																className="transition-colors hover:text-foreground disabled:opacity-50"
+															>
+																Undo
+															</button>
+														</div>
+													)}
 												</div>
+												{undoTail?.promptId === m.id && editingPromptId === m.id ? (
+													<PromptEditor
+														initial={undoTail.text}
+														onSend={(edited) => void sendEditedPrompt(m.id, edited)}
+														onCancel={() => setEditingPromptId(null)}
+													/>
+												) : (
+													<div className="lh-prose whitespace-pre-wrap text-foreground">
+														<PathText text={m.parts.filter((p) => p.type === "text").map((p) => p.text).join("\n")} />
+													</div>
+												)}
 											</div>
 									) : (
 									<Message from="assistant" className="max-w-full">

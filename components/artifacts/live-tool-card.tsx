@@ -39,6 +39,8 @@ export function LiveToolCard({ part }: ArtifactPartProps) {
 	else if (typeof inp.session === "string" && inp.session) arg = inp.session;
 
 	const hasInput = p.input != null && Object.keys(inp).length > 0;
+	// compute's input holds the answer key it is checking: label only, never the code.
+	const hideInput = tool === "compute";
 
 	return (
 		<details
@@ -51,15 +53,15 @@ export function LiveToolCard({ part }: ArtifactPartProps) {
 				<Shimmer duration={1} className="text-xs">
 					{toolActivityLabel(tool)}
 				</Shimmer>
-				{arg && <span className="truncate">{arg}</span>}
-				<ChevronRight className="size-3 shrink-0 opacity-50 transition-transform group-open:rotate-90" />
+				{arg && !hideInput && <span className="truncate">{arg}</span>}
+				{!hideInput && <ChevronRight className="size-3 shrink-0 opacity-50 transition-transform group-open:rotate-90" />}
 			</summary>
-			<div className="mt-2 rounded-xl border bg-card p-3 text-xs">
+			{!hideInput && <div className="mt-2 rounded-xl border bg-card p-3 text-xs">
 				<div className="mb-1 font-medium uppercase tracking-wide text-muted-foreground">Input (streaming)</div>
 				<pre className="max-h-32 overflow-auto whitespace-pre-wrap break-all font-mono text-[11px] leading-relaxed">
 					{hasInput ? JSON.stringify(p.input, null, 2) : "…"}
 				</pre>
-			</div>
+			</div>}
 		</details>
 	);
 }

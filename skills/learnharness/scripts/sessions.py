@@ -22,6 +22,7 @@ LEARNING_TOOLS = QUESTION_TOOLS | {"problem", "conclude", "probe_done", "plan_in
 OPERATION_TOOLS = {
     "read", "ls", "grep", "find", "bash", "write", "edit", "list_sessions",
     "list_propositions", "get_session", "get_proposition", "search", "web_search", "web_fetch",
+    "compute",
 }
 MARKERS = {
     "graph-context", "probe-handoff", "subagent-steer", "subagent-abort", "plan-block",

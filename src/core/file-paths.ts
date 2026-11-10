@@ -105,14 +105,17 @@ export function filePathLabel(path: string): string {
 /** Learner equations are stored as `\(latex\)`: dollar signs stay literal prose (currency). */
 export type LearnerTextPart = FilePathPart | { kind: "math"; text: string; latex: string; start: number; end: number };
 
-/** parseFilePaths plus inline `\(…\)` math in the text parts; still lossless. */
+/** parseFilePaths plus inline `\(…\)` math in the text parts, except inside a backtick code span; still lossless. */
 export function parseLearnerText(text: string): LearnerTextPart[] {
+	// Over the whole text, not per part: a path chip between two code spans must not pair their backticks.
+	const code = [...text.matchAll(/`[^`\n]*`/g)].map((span) => [span.index, span.index + span[0].length] as const);
 	return parseFilePaths(text).flatMap((part): LearnerTextPart[] => {
 		if (part.kind !== "text") return [part];
 		const parts: LearnerTextPart[] = [];
 		let plain = 0;
 		for (const match of part.text.matchAll(/\\\(([^\n]*?)\\\)/g)) {
 			const start = part.start + match.index, end = start + match[0].length;
+			if (code.some(([from, to]) => start < to && from < end)) continue;
 			if (plain < match.index) parts.push({ kind: "text", text: part.text.slice(plain, match.index), start: part.start + plain, end: start });
 			parts.push({ kind: "math", text: match[0], latex: match[1]!, start, end });
 			plain = match.index + match[0].length;

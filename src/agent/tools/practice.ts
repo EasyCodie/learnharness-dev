@@ -21,6 +21,8 @@ import { readTool } from "./read.ts";
 import { lsTool } from "./ls.ts";
 import { findTool } from "./find.ts";
 import { grepTool } from "./grep.ts";
+import { CHECK_KEY_FIRST, computeTool } from "./compute.ts";
+import type { EnabledTools } from "../../core/pending.ts";
 import { jobTools, type JobToolContext } from "./jobs.ts";
 import { proberGraphTools, type GraphToolContext } from "./graph.ts";
 import { activeProblemOf } from "../../core/native-messages.ts";
@@ -105,7 +107,8 @@ export function problemTool(
 			"Pose one practice problem. Ends the turn — the learner works in the thinking field; their thinking " +
 			"traces and answer commits arrive back as labeled messages. The modelSolution rides this call's " +
 			"arguments and stays hidden from the learner until you conclude (conclude shows it verbatim — the " +
-			"reveal needs no new field). Only one problem may be active — conclude it before posing the next.",
+			"reveal needs no new field). Only one problem may be active — conclude it before posing the next. " +
+			CHECK_KEY_FIRST.trim(),
 		parameters: problemInputObject,
 		executionMode: "sequential",
 		prepareArguments: (args: unknown) => {
@@ -220,7 +223,7 @@ export function concludeTool(gate: PracticeGate): AgentTool<typeof concludeInput
 }
 
 /** The practice toolset (the practice agent's whole registry). */
-export function practiceTools(ctx: PracticeToolContext): Record<string, AgentTool<any>> {
+export function practiceTools(ctx: PracticeToolContext, enabled?: EnabledTools): Record<string, AgentTool<any>> {
 	// ONE gate per turn, shared by both tools — the intra-turn truth.
 	const gate = createPracticeGate(ctx);
 	// THE RARELY-NEEDED SET (owner round 10): read/ls/find/grep over the
@@ -229,7 +232,8 @@ export function practiceTools(ctx: PracticeToolContext): Record<string, AgentToo
 	// keys; demo/visual stay teach-only), and
 	// the prober's map readers when the settings gate opened. None are
 	// toggle-filtered: problem/conclude are the session; these are
-	// exceptions the doctrine says to reach for rarely.
+	// exceptions the doctrine says to reach for rarely. compute is the one
+	// exception (2026-11-09): it follows the user's tool toggle.
 	const jobs = ctx.jobs ? jobTools(ctx.jobs) : null;
 	// healToolRecord (owner, 2026-10-09 — the whitehead generalization):
 	// the standard argument heal over the WHOLE registry. problem/conclude
@@ -245,5 +249,7 @@ export function practiceTools(ctx: PracticeToolContext): Record<string, AgentToo
 		...(jobs?.research ? { research: jobs.research } : {}),
 		...(jobs ? { pdf: jobs.pdf! } : {}),
 		...(ctx.graph ? proberGraphTools(ctx.graph) : {}),
+		// The one toggle-filtered practice tool (2026-11-09): answer-key checks.
+		...(enabled?.compute === false ? {} : { compute: computeTool }),
 	});
 }

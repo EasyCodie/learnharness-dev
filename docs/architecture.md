@@ -61,11 +61,13 @@ Question drafts survive optimistic unmount in memory. Uncertain submissions reco
 
 | Agent | Interaction | Other tools |
 | --- | --- | --- |
-| Prober | `probe` or `recall`, `ask_user_question`, `probe_done` | Read-only files, research/PDF dispatch; gated graph readers |
-| Teacher | `quiz` or `explain`, `ask_user_question`, `plan_init` | Read-only files, research/PDF/demo/visual dispatch; `show_image` |
-| Practitioner | `problem`, `conclude` | Read-only files, research/PDF dispatch; gated graph readers |
+| Prober | `probe` or `recall`, `ask_user_question`, `probe_done` | Read-only files, research/PDF dispatch, `compute`; gated graph readers |
+| Teacher | `quiz` or `explain`, `ask_user_question`, `plan_init` | Read-only files, research/PDF/demo/visual dispatch, `compute`; `show_image` |
+| Practitioner | `problem`, `conclude` | Read-only files, research/PDF dispatch, `compute`; gated graph readers |
 
-Mechanic choices, settings toggles, and readiness affect availability. Practice side tools are composed separately from teaching toggles. Claude-family agents can receive `send_to_user`. Argument healing precedes semantic validation; invalid calls return errors the model can correct.
+Mechanic choices, settings toggles, and readiness affect availability. Practice side tools are composed separately from teaching toggles. `compute` is the one practice tool that follows its toggle. Claude-family agents can receive `send_to_user`. Argument healing precedes semantic validation; invalid calls return errors the model can correct.
+
+`compute` ([`compute/`](../src/agent/compute/)) checks calculation-dependent answer keys in Python + SymPy (Pyodide, wheels vendored in `vendor/pyodide-packages/`). It runs in one warm child process per server, spawned from `process.execPath` with an empty environment under Node's permission model (read access only to the Pyodide and wheel folders). Python can reach the JS `Function` constructor through any proxy, so after Pyodide loads the worker allows no further module loads and disables socket connect; on Electron's Node 24 that lockdown is the only network barrier, so CI runs the compute tests under Electron too. Jobs run one at a time; an abort or timeout kills the process and the next call respawns it. The transcript shows only a fixed label, never the code, result, or traceback.
 
 Question tools validate and execute server-side, returning a synthetic terminating placeholder. It stops a clean question pose, including mixed tool batches, but is not saved. The actual learner answer becomes the call's result later. The browser shuffles options and grades select questions; free recall exposes the committed answer for model judgment. Sibling pending questions are answered without inference until the last is resolved.
 

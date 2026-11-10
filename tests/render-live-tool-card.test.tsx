@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { LiveToolCard } from "../components/artifacts/live-tool-card.tsx";
+import { artifactRenderers } from "../components/artifacts/index.ts";
 
 function part(tool: string, input: unknown) {
 	return { type: `tool-${tool}`, toolCallId: "c1", state: "input-streaming", input };
@@ -39,5 +40,19 @@ describe("LiveToolCard (the working-state grammar)", () => {
 	it("no input yet renders a placeholder, not an empty pre", () => {
 		const html = renderToStaticMarkup(<LiveToolCard part={part("grep", undefined) as never} />);
 		assert.match(html, /<pre[^>]*>…<\/pre>/);
+	});
+
+	it("compute never renders its code, result or traceback, running or settled", () => {
+		const SECRET = "ANSWER_KEY_42";
+		const running = renderToStaticMarkup(<LiveToolCard part={part("compute", { code: `print(${SECRET})`, path: SECRET }) as never} />);
+		assert.match(running, /Checking a calculation…/);
+		assert.ok(!running.includes(SECRET), "running card leaks the code");
+		const Card = artifactRenderers.compute!;
+		for (const state of ["output-available", "output-error"]) {
+			const settled = { type: "tool-compute", toolCallId: "c1", state, input: { code: SECRET }, rawInput: { code: SECRET }, output: SECRET, errorText: SECRET };
+			const html = renderToStaticMarkup(<Card part={settled as never} />);
+			assert.match(html, /Checked a calculation/);
+			assert.ok(!html.includes(SECRET), `${state} card leaks`);
+		}
 	});
 });

@@ -122,6 +122,7 @@ export function useChatSession({ chatId, initialMessages, initialError, initiall
 	const saveQuestionDraft = useCallback((questionKey: string, draft: Parameters<SessionModel["saveQuestionDraft"]>[1]) => model.saveQuestionDraft(questionKey, draft), [model]);
 	const setMessages = useCallback((record: LhMessage[], turnError?: string) => model.setMessages(record, turnError), [model]);
 	const adoptRecord = useCallback((record: LhMessage[]) => model.adoptRecord(record), [model]);
+	const undoPrompt = useCallback((messageId: string) => model.undoPrompt(messageId), [model]);
 	const stop = useCallback(() => model.stop(), [model]);
 	const clearError = useCallback(() => model.clearError(), [model]);
 	const resumeStream = useCallback(() => void model.resumeStream(), [model]);
@@ -144,6 +145,7 @@ export function useChatSession({ chatId, initialMessages, initialError, initiall
 		saveQuestionDraft,
 		setMessages,
 		adoptRecord,
+		undoPrompt,
 		stop,
 		clearError,
 		resumeStream,
