@@ -151,7 +151,7 @@ describe("memory through the chat handler", () => {
 		const id = chat();
 		await turn(id, "remember I'm aiming for a 7", [calls(fauxToolCall("remember", { text: "Aiming for a 7.", kind: "preference", level: "profile", note: "n" }, { id: "toolu_e" })), say("ok")]);
 		const live = readMemoryView().profile[0]!.evidence[0]!.where;
-		assert.ok(typeof live === "object" && live.chatTitle === "Waves" && live.messageId !== null);
+		assert.ok(typeof live === "object" && live.chatTitle === "Waves" && live.anchor === memoryStore.read().memories[0]!.entries[0]!.source!.ref);
 		const outcome = await deleteChatSession(id, "delete-nodes");
 		assert.ok(outcome.ok);
 		assert.equal(memoryStore.read().memories.length, 1);

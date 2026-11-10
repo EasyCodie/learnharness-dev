@@ -42,6 +42,7 @@ import {
 	firstSourceTextParts,
 	cliContextWindowOf,
 	messageAnchorId,
+	MEMORY_TOOL_NAMES,
 	textPartMessageId,
 	kbdEventForAction as kbdEventForChat,
 	type ChatInput,
@@ -1600,10 +1601,13 @@ export function Chat({
 												// instead of silence (question tools used to render null,
 												// so a flailing quiz loop read as a stall). Aborts are
 												// terminal — nothing retries — so they stay silent.
+												// Memory tools are exempt (Ivan, 2026-11-10): their refusals are
+												// expected steps and the memory system stays invisible.
 												if (
 													part.state === "output-error" &&
 													part.type.startsWith("tool-") &&
-													part.errorText !== "Operation aborted"
+													part.errorText !== "Operation aborted" &&
+													!(MEMORY_TOOL_NAMES as readonly string[]).includes(part.type.slice("tool-".length))
 												) {
 													return (
 														<SystemLine key={`retry-${pi}`} testId="tool-retry">

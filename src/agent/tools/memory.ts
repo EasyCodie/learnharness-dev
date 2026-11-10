@@ -48,6 +48,10 @@ export function memoryTools(ctx: MemoryToolContext): Record<string, AgentTool<an
 	// Turn-scoped: the saved record does not change during a turn, so a
 	// memory_subject → remember pair in one run shares this closure.
 	let subject: string | null | undefined;
+	// A subject that holds no memories yet counts as new only in the turn
+	// where memory_subject accepted it: subjects may have appeared since an
+	// earlier turn, so the first save re-checks against the current list.
+	let acceptedNewThisTurn = false;
 	const currentSubject = () => (subject === undefined ? (subject = sessionSubject(ctx.chatStore.getChat(ctx.chatId)?.messages ?? [])) : subject);
 
 	const memorySubject: AgentTool<typeof subjectInput> = {
@@ -69,6 +73,7 @@ export function memoryTools(ctx: MemoryToolContext): Record<string, AgentTool<an
 				);
 			}
 			subject = name;
+			acceptedNewThisTurn = !existing.includes(name);
 			return { text: subjectIndex(file, name), details: { subject: name } };
 		}),
 	};
@@ -103,9 +108,18 @@ export function memoryTools(ctx: MemoryToolContext): Record<string, AgentTool<an
 		// saved record except on providers that reuse ids (the call-ids.ts
 		// rename). Ivan uses Claude only (2026-11-10); revisit if that changes.
 		execute: serverExecute("remember", rememberInput, (input, { toolCallId }) => {
+			const file = ctx.memoryStore.read();
+			const current = currentSubject();
+			const subjects = subjectsOf(file);
+			if (input.level !== "profile" && current && !acceptedNewThisTurn && subjects.length > 0 && !resolveName(subjects, current)) {
+				throw new Error(
+					`This session's subject "${current}" holds no memories yet, and the subject list has changed since it was set. Existing subjects: ${subjects.join(", ")}. ` +
+						"Call memory_subject again: reuse one of these names if it is the same subject, or confirm with new: true.",
+				);
+			}
 			const result = applyRemember(
-				ctx.memoryStore.read(),
-				{ ...input, subject: currentSubject(), newSubject: true },
+				file,
+				{ ...input, subject: current, newSubject: true },
 				{ at: new Date().toISOString(), by: "agent", source: { chatId: ctx.chatId, ref: toolCallId } },
 			);
 			if ("problems" in result) throw new Error(result.problems.join("\n"));

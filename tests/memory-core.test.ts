@@ -147,7 +147,7 @@ describe("memory core", () => {
 		let file = save(emptyMemoryFile(), { text: "a" }, agent("call_1", "chat_live"));
 		file = save(file, { text: "b" }, agent("call_2", "chat_gone"));
 		file = save(file, { text: "c" }, learner);
-		const view = memoryView(file, true, ({ chatId, ref }) => (chatId === "chat_live" ? { chatId, chatTitle: "Waves", messageId: `msg-${ref}` } : "deleted"));
-		assert.deepEqual(view.profile.map((m) => m.evidence[0]!.where), [{ chatId: "chat_live", chatTitle: "Waves", messageId: "msg-call_1" }, "deleted", "settings"]);
+		const view = memoryView(file, true, ({ chatId, ref }) => (chatId === "chat_live" ? { chatId, chatTitle: "Waves", anchor: ref } : "deleted"));
+		assert.deepEqual(view.profile.map((m) => m.evidence[0]!.where), [{ chatId: "chat_live", chatTitle: "Waves", anchor: "call_1" }, "deleted", "settings"]);
 	});
 });

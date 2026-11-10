@@ -67,6 +67,25 @@ describe("memory tools", () => {
 		assert.equal(h.file().memories[0]!.subject, "Physics");
 	});
 
+	it("a new subject set in an earlier turn is re-checked against the current list before the first save", async () => {
+		const record = [{ id: "r1", role: "toolResult", toolCallId: "x", toolName: "memory_subject", content: [], details: { subject: "IB Physics HL" }, isError: false, timestamp: 1 }] as unknown as LhMessage[];
+		const existing = harness();
+		await existing.run("memory_subject", { subject: "Physics HL", new: true });
+		await existing.run("remember", { ...pref(), level: "subject" });
+		const h = harness(record, existing.file());
+		await assert.rejects(h.run("remember", { ...pref(), level: "subject" }), /subject list has changed[\s\S]*Existing subjects: Physics HL/);
+		assert.match(await h.text("memory_subject", { subject: "physics hl" }), /Wants a diagram/);
+		await h.run("remember", { ...pref(), level: "subject", text: "Units in words." }, "c9");
+		assert.deepEqual([...new Set(h.file().memories.map((m) => m.subject))], ["Physics HL"]);
+		// Confirming the new name in this turn is accepted.
+		const h2 = harness(record, existing.file());
+		await h2.run("memory_subject", { subject: "IB Physics HL", new: true });
+		await h2.run("remember", { ...pref(), level: "subject" });
+		assert.ok(h2.file().memories.some((m) => m.subject === "IB Physics HL"));
+		// Profile saves never need a subject.
+		await harness(record, existing.file()).run("remember", pref());
+	});
+
 	it("memory_read: needs a subject, refuses an unknown area with the list, returns the area", async () => {
 		const h = harness();
 		await assert.rejects(h.run("memory_read", { area: "Waves" }), /memory_subject first/);

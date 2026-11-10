@@ -16,6 +16,7 @@ describe("memory transcript cards", () => {
 		const Card = artifactRenderers.remember!;
 		const ok = renderToStaticMarkup(<Card part={{ type: "tool-remember", toolCallId: "c", state: "output-available", output: { ok: true, id: "m_ab12cd", text: "Wants a diagram first." } } as never} />);
 		assert.match(ok, /remembered: Wants a diagram first\./);
+		assert.match(ok, /id="message-c"/, "the evidence link's anchor");
 		const failed = renderToStaticMarkup(<Card part={{ type: "tool-remember", toolCallId: "c", state: "output-error", errorText: "refused" } as never} />);
 		assert.equal(failed, "");
 	});
@@ -39,13 +40,13 @@ describe("Settings → Memory", () => {
 		profile: [
 			{
 				id: "m_aaaaaa", kind: "preference", text: "Wants a diagram before any algebra.", at: "2026-11-10T09:00:00.000Z",
-				evidence: [{ at: "2026-11-10T09:00:00.000Z", by: "agent", note: "He asked for pictures.", where: { chatId: "chat_1", chatTitle: "Waves", messageId: "msg_1" } }],
+				evidence: [{ at: "2026-11-10T09:00:00.000Z", by: "agent", note: "He asked for pictures.", where: { chatId: "chat_1", chatTitle: "Waves", anchor: "toolu_1" } }],
 			},
 			{ id: "m_bbbbbb", kind: "preference", text: "Old one.", at: "2026-11-09T09:00:00.000Z", evidence: [{ at: "2026-11-09T09:00:00.000Z", by: "agent", note: "n", where: "deleted" }] },
 		],
 		subjects: [{
 			name: "Economics",
-			memories: [{ id: "m_cccccc", kind: "preference", text: "Aiming for a 7.", at: "2026-11-10T09:00:00.000Z", evidence: [{ at: "2026-11-10T09:00:00.000Z", by: "learner", note: "Added by you in Settings", where: "settings" }] }],
+			memories: [{ id: "m_cccccc", kind: "preference", text: "Aiming for a 7.", at: "2026-11-10T09:00:00.000Z", evidence: [{ at: "2026-11-10T09:00:00.000Z", by: "learner", note: "Added by you in Settings", where: "settings" }, { at: "2026-11-10T10:00:00.000Z", by: "learner", note: "Edited by you in Settings", where: "settings" }] }],
 			areas: [{ name: "Unit 4", description: "Macro", memories: [] }],
 		}],
 	};
@@ -56,9 +57,10 @@ describe("Settings → Memory", () => {
 		assert.match(html, /Profile \(2 \/ 15\)/);
 		assert.match(html, /Economics/);
 		assert.match(html, /Unit 4/);
-		assert.match(html, /href="\/chat\/chat_1#message-msg_1">Waves<\/a>/);
+		assert.match(html, /href="\/chat\/chat_1#message-toolu_1">Waves<\/a>/);
 		assert.match(html, /from a deleted session/);
 		assert.match(html, /Added by you in Settings/);
+		assert.match(html, /Edited by you in Settings/);
 		assert.match(html, /<details open="" class="group\/m" data-testid="memory-m_aaaaaa">/);
 	});
 

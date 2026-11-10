@@ -109,8 +109,9 @@ export function readMemoryView(): MemoryView {
 		if (!chats.has(chatId)) chats.set(chatId, stores.chatStore.getChat(chatId));
 		const chat = chats.get(chatId);
 		if (!chat) return "deleted";
-		const message = chat.messages.find((m) => m.id === ref || (m.role === "assistant" && m.content.some((b) => b.type === "toolCall" && b.id === ref)));
-		return { chatId, chatTitle: chat.title, messageId: message?.id ?? null };
+		// The remember line renders the anchor message-<call id> (RememberCard).
+		const found = chat.messages.some((m) => m.role === "assistant" && m.content.some((b) => b.type === "toolCall" && b.id === ref));
+		return { chatId, chatTitle: chat.title, anchor: found ? ref : null };
 	});
 }
 

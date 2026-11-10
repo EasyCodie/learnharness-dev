@@ -203,9 +203,10 @@ function AddMemory({ act, subjects, areasFor, profileFull }: { act: Act; subject
 }
 
 function evidenceLine(e: MemoryRow["evidence"][number]) {
-	if (e.where === "settings") return <span>Added by you in Settings</span>;
+	// Settings entries carry their own wording: "Added by you in Settings" / "Edited by you in Settings".
+	if (e.where === "settings") return <span>{e.note || "Added by you in Settings"}</span>;
 	if (e.where === "deleted") return <span>from a deleted session</span>;
-	const href = `/chat/${encodeURIComponent(e.where.chatId)}${e.where.messageId ? `#${encodeURIComponent(messageAnchorId(e.where.messageId))}` : ""}`;
+	const href = `/chat/${encodeURIComponent(e.where.chatId)}${e.where.anchor ? `#${encodeURIComponent(messageAnchorId(e.where.anchor))}` : ""}`;
 	return <a className="underline-offset-2 hover:underline" href={href}>{e.where.chatTitle}</a>;
 }
 

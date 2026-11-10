@@ -1,6 +1,6 @@
 "use client";
 
-import type { ArtifactPartProps } from "@/src/core";
+import { messageAnchorId, type ArtifactPartProps } from "@/src/core";
 import { useSettingsDialog } from "@/components/settings/settings-dialog";
 
 /** A saved memory: one muted line; a click opens Settings → Memory on it.
@@ -12,6 +12,8 @@ export function RememberCard({ part }: ArtifactPartProps) {
 	return (
 		<button
 			type="button"
+			// Settings evidence links land here: /chat/<id>#message-<call id>.
+			id={messageAnchorId(part.toolCallId)}
 			data-testid="remember-card"
 			onClick={() => open("memory", output.id)}
 			className="my-1 block w-full max-w-2xl truncate text-left text-xs text-muted-foreground hover:text-foreground"

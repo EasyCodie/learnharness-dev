@@ -41,7 +41,8 @@ export interface MemoryFile {
 
 /** Where one evidence entry points, resolved for Settings. */
 export type MemoryEvidenceWhere =
-	| { chatId: string; chatTitle: string; messageId: string | null }
+	/** anchor: the hash target in that chat (the remember line, `message-<call id>`); null = open the chat. */
+	| { chatId: string; chatTitle: string; anchor: string | null }
 	| "deleted"
 	| "settings";
 
