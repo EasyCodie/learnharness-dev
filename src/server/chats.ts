@@ -1,7 +1,9 @@
 import { abortExtraction, extractionStatuses } from "../agent/subagents/extraction.ts";
 import { isJobLive } from "../agent/subagents/aborts.ts";
-import { coverageOf } from "../core/coverage.ts";
-import { deleteChatTraces, type ChatDeleteMode, type ChatDeletionStats } from "../core/graph-deletion.ts";
+import { coverageOf, coverageSlots } from "../core/coverage.ts";
+import { deleteChatTraces, deleteMessageTraces, type ChatDeleteMode, type ChatDeletionStats } from "../core/graph-deletion.ts";
+import { undoableTail } from "../core/prompt-undo.ts";
+import { emit } from "../core/events.ts";
 import { titleFromPrompt } from "../core/contracts.ts";
 import { graphRevision } from "./graph.ts";
 import { stores } from "./stores.ts";
@@ -101,21 +103,8 @@ export async function deleteChatSession(chatId: string, mode: ChatDeleteMode): P
 	}
 	const blocker = runningWorkBlocker(chatId);
 	if (blocker) return blocker;
-	if (extractionStatuses().some((run) => run.chatId === chatId)) {
-		abortExtraction(chatId); // true cancellation — spend stops, nothing merges
-		const deadline = Date.now() + WIND_DOWN_TIMEOUT_MS;
-		while (extractionStatuses().some((run) => run.chatId === chatId)) {
-			if (Date.now() > deadline) {
-				return {
-					ok: false,
-					status: 503,
-					code: "extraction_winding_down",
-					error: "The session's extraction is still winding down — try again in a moment",
-				};
-			}
-			await new Promise((resolve) => setTimeout(resolve, WIND_DOWN_POLL_MS));
-		}
-	}
+	const windDown = await windDownExtraction(chatId);
+	if (windDown) return windDown;
 
 	// A result wake or a worker may have started during extraction wind-down.
 	// Recheck immediately before the synchronous purge, with no await gap.
@@ -123,6 +112,64 @@ export async function deleteChatSession(chatId: string, mode: ChatDeleteMode): P
 	if (lateBlocker) return lateBlocker;
 
 	return finishChatDeletion(chatId, mode);
+}
+
+/** True-cancel the chat's extraction run (spend stops, nothing merges) and
+ * wait for it to leave the registry; a wedged run is a retryable 503. */
+async function windDownExtraction(chatId: string): Promise<Extract<ChatDeleteOutcome, { status: 503 }> | null> {
+	if (!extractionStatuses().some((run) => run.chatId === chatId)) return null;
+	abortExtraction(chatId);
+	const deadline = Date.now() + WIND_DOWN_TIMEOUT_MS;
+	while (extractionStatuses().some((run) => run.chatId === chatId)) {
+		if (Date.now() > deadline) {
+			return {
+				ok: false,
+				status: 503,
+				code: "extraction_winding_down",
+				error: "The session's extraction is still winding down — try again in a moment",
+			};
+		}
+		await new Promise((resolve) => setTimeout(resolve, WIND_DOWN_POLL_MS));
+	}
+	return null;
+}
+
+export type PromptUndoOutcome =
+	| { ok: false; status: 404 | 400 | 409 | 503; error: string }
+	| { ok: true; text: string; stats: ChatDeletionStats; graphRevision: number };
+
+/**
+ * Undo the last prompt (owner, 2026-11-10): wind down this chat's
+ * extraction, then in ONE synchronous block purge the graph traces of the
+ * removed messages, drop their coverage rows, and truncate the record —
+ * the deleteChatSession atomicity argument, scoped to messages. Usage
+ * logs stay: that spend really happened.
+ */
+export async function undoLastPrompt(chatId: string, promptId: string): Promise<PromptUndoOutcome> {
+	const gate = (): PromptUndoOutcome | null => {
+		const record = stores.chatStore.getChat(chatId);
+		if (!record) return { ok: false, status: 404, error: "No such session" };
+		if (isTurnRunning(chatId)) return { ok: false, status: 409, error: "A turn is running in this session — try again when it finishes" };
+		if (undoableTail(record.messages)?.promptId !== promptId) return { ok: false, status: 400, error: "This message can no longer be undone" };
+		return null;
+	};
+	const early = gate();
+	if (early) return early;
+	const windDown = await windDownExtraction(chatId);
+	if (windDown) return { ok: false, status: 503, error: windDown.error };
+	// THE SYNC BLOCK — no awaits below. Re-read truth after the wind-down.
+	const late = gate();
+	if (late) return late;
+	const record = stores.chatStore.getChat(chatId)!;
+	const tail = undoableTail(record.messages)!;
+	const removed = record.messages.slice(tail.cutAt);
+	// Zero-token slots (learner text) share one empty fingerprint: never a coverage key.
+	const fps = new Set(coverageSlots(record.messages).slice(tail.cutAt).filter((slot) => slot.tokens > 0).map((slot) => slot.fp));
+	const stats = deleteMessageTraces(stores.graphStore, chatId, new Set(removed.map((m) => m.id)), fps);
+	stores.chatStore.saveMessages(chatId, record.messages.slice(0, tail.cutAt));
+	clearTurnFailure(chatId);
+	emit("record-changed", { chatId });
+	return { ok: true, text: tail.text, stats, graphRevision: graphRevision() };
 }
 
 /** Source deletion has already purged the selected batch's graph traces.

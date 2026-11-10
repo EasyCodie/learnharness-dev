@@ -891,6 +891,33 @@ export class SessionModel {
 		}
 	}
 
+	/** Undo the last prompt (owner, 2026-11-10): the server truncates the
+	 *  record and purges the graph; the view adopts the saved record. Returns
+	 *  the prompt text, or null after surfacing the refusal. */
+	async undoPrompt(messageId: string): Promise<string | null> {
+		if (!this.readyRef || this.statusValue === "submitted" || this.statusValue === "streaming") return null;
+		try {
+			const res = await this.fetch(`/api/chats/${encodeURIComponent(this.chatId)}/undo`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ messageId }),
+			});
+			const body = await res.json().catch(() => null) as { text?: string; error?: string } | null;
+			if (!res.ok || typeof body?.text !== "string") throw new Error(body?.error ?? `The undo failed (${res.status}).`);
+			const recordRes = await this.fetch(`/api/chats/${encodeURIComponent(this.chatId)}`);
+			const record = recordRes.ok ? await recordRes.json() as { messages?: LhMessage[] } : null;
+			if (!Array.isArray(record?.messages)) throw new Error("The undo landed, but the session could not reload. Refresh the page.");
+			this.setMessages(record.messages);
+			this.setError(null);
+			// Undo never wakes the agent; the learner's next send does.
+			this.automaticContinuationBlocked = true;
+			return body.text;
+		} catch (err) {
+			this.setError((err as Error).message);
+			return null;
+		}
+	}
+
 	/** Local detach: cancel the consume, keep the partial tail. The page's
 	 *  settle watch adopts the record when the server turn finishes. */
 	stop(): void {
