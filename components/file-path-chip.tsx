@@ -11,7 +11,8 @@ import {
 	Folder,
 } from "lucide-react";
 import katex from "katex";
-import { filePathLabel, isDirectoryReference, parseLearnerText } from "@/src/core";
+import { filePathLabel, isDirectoryReference, parseComposerTokens } from "@/src/core";
+import { CitationChip } from "./citation-chip";
 
 function fileIcon(label: string) {
 	const extension = label.split(".").at(-1)?.toLowerCase();
@@ -50,14 +51,16 @@ export function FilePathChip({ path, contentEditable, className }: FilePathChipP
 	);
 }
 
-/** Ordinary learner text stays ordinary text; only quoted paths and \(…\) equations render. */
+/** Ordinary learner text stays ordinary text; only quoted paths, \(…\)
+ *  equations and tutor citations render. */
 export function PathText({ text }: { text: string }) {
 	return (
 		<>
-			{parseLearnerText(text).map((part) => (
+			{parseComposerTokens(text).map((part) => (
 				<Fragment key={part.start}>
 					{part.kind === "path" ? <FilePathChip path={part.path} />
 						: part.kind === "math" ? <span role="img" aria-label={part.latex} dangerouslySetInnerHTML={{ __html: katex.renderToString(part.latex, { throwOnError: false, output: "html" }) }} />
+						: part.kind === "citation" ? <CitationChip citation={part.citation} variant="transcript" />
 						: part.text}
 				</Fragment>
 			))}

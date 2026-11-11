@@ -25,8 +25,9 @@ echo "Building main @ $(git -C "$BUILD_DIR" log -1 --format='%h %s')"
 
 cd "$BUILD_DIR"
 npm ci
+npm run plugins:setup
 rm -rf dist .next/standalone
-npx next build
+npm run build
 node scripts/smoke-provider-runtime.mjs
 node scripts/build-server.mjs
 node scripts/smoke-server.mjs
