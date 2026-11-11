@@ -51,6 +51,8 @@ export const BACKGROUND_MODEL_ROLES = [
 	"visualMaker",
 	"extractor",
 	"auditor",
+	// The learner-memory curator (plan 2026-11-10 Default 62): strong slot.
+	"curator",
 ] as const;
 
 export type BackgroundModelRole = (typeof BACKGROUND_MODEL_ROLES)[number];
@@ -326,6 +328,7 @@ export const ROLE_SLOT: Readonly<Record<ModelRole, ModelSlotName>> = {
 	demoBuilder: "cheap",
 	extractor: "cheap",
 	auditor: "cheap",
+	curator: "strong",
 	visualMaker: "vision",
 	pdfReader: "vision",
 };

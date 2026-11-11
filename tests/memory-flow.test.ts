@@ -208,6 +208,58 @@ describe("Settings → Memory routes", () => {
 		assert.deepEqual(readMemoryView().subjects.map((s) => s.name), ["Maths", "Physics HL"]);
 	});
 
+	it("Phase 2: a thinking memory's mark — added with one, changed by Ivan (his statement), refused on other kinds", async () => {
+		assert.equal((await memoryRoute.POST(json("POST", { kind: "preference", level: "profile", text: "x", flawed: true }))).status, 400);
+		const added = (await (await memoryRoute.POST(json("POST", { kind: "thinking", level: "profile", text: "Treats rest as zero acceleration.", flawed: true }))).json()) as { id: string };
+		assert.equal(readMemoryView().profile[0]!.status, "active");
+		assert.equal(readMemoryView().profile[0]!.flawed, true);
+		// A curator-created flawed model on the bar: Ivan's mark makes it active (Default 56).
+		const curated = { at: "2026-11-11T00:00:00.000Z", by: "curator" as const, source: { chatId: "chat_x", ref: "r1" }, note: "n", stance: "confirm" as const, question: "q1", subject: "Physics", quote: "q", text: "Divides by zero freely." };
+		memoryStore.write({ ...memoryStore.read(), memories: [...memoryStore.read().memories, { id: "m_cur000", kind: "thinking", flawed: false, subject: "Physics", area: "A", entries: [curated] }], areas: { Physics: { A: "a" } } });
+		assert.equal(readMemoryView().subjects[0]!.areas[0]!.memories[0]!.status, "note");
+		assert.equal((await memoryIdRoute.PUT(json("PUT", { flawed: true }), params("m_cur000"))).status, 200);
+		const m = memoryStore.read().memories.find((x) => x.id === "m_cur000")!;
+		assert.deepEqual([m.flawed, m.markedByLearner], [true, true]);
+		assert.equal(readMemoryView().subjects[0]!.areas[0]!.memories[0]!.status, "active");
+		// A rewording alone keeps a curator-created flawed model on the bar.
+		memoryStore.write({ ...memoryStore.read(), memories: memoryStore.read().memories.map((x) => (x.id === "m_cur000" ? { ...x, markedByLearner: undefined } : x)) });
+		assert.equal((await memoryIdRoute.PUT(json("PUT", { text: "Divides by zero without checking." }), params("m_cur000"))).status, 200);
+		assert.equal(readMemoryView().subjects[0]!.areas[0]!.memories[0]!.status, "unconfirmed");
+		assert.equal((await memoryIdRoute.PUT(json("PUT", { flawed: true }), params(added.id))).status, 200);
+		const notThinking = (await (await memoryRoute.POST(json("POST", { kind: "mistake", level: "profile", text: "y" }))).json()) as { id: string };
+		assert.equal((await memoryIdRoute.PUT(json("PUT", { flawed: true }), params(notThinking.id))).status, 400);
+	});
+
+	it("Phase 2: renaming a subject renames it in every sighting, so it never counts as two", async () => {
+		const sighting = (ref: string, subject: string, text?: string) => ({ at: "2026-11-11T00:00:00.000Z", by: "curator" as const, source: { chatId: "chat_x", ref }, note: "n", stance: "confirm" as const, question: ref, subject, ...(text ? { text } : {}) });
+		memoryStore.write({
+			version: 1,
+			areas: { Mechanics: { K: "k" } },
+			memories: [{ id: "m_ren000", kind: "mistake", subject: "Mechanics", area: "K", entries: [sighting("a", "Mechanics", "Drops signs."), sighting("b", "Mechanics"), sighting("c", "Physics"), sighting("d", "Physics")] }],
+		});
+		const { meetsProfileBar } = await import("../src/core/memory.ts");
+		assert.equal(meetsProfileBar(memoryStore.read().memories[0]!), true);
+		assert.equal((await areasRoute.PUT(json("PUT", { subject: "Mechanics", newName: "Physics" }))).status, 200);
+		const renamed = memoryStore.read().memories[0]!;
+		assert.deepEqual(renamed.entries.map((e) => e.subject), ["Physics", "Physics", "Physics", "Physics"]);
+		assert.equal(meetsProfileBar(renamed), false);
+	});
+
+	it("Phase 2: curator evidence links resolve to the cited card, and notices carry their anchor", async () => {
+		const c = chatStore.createChat("Practice");
+		chatStore.saveMessages(c.id, [
+			{ id: "a0", role: "assistant", timestamp: 1, stopReason: "toolUse", content: [{ type: "toolCall", id: "q0", name: "quiz", arguments: {} }] },
+			{ id: "r0", role: "toolResult", toolCallId: "q0", toolName: "quiz", isError: false, timestamp: 1, content: [], details: {} },
+			{ id: "u1", role: "user", content: "hm", timestamp: 1 },
+		] as never);
+		const s = (ref: string, text?: string) => ({ at: "2026-11-11T00:00:00.000Z", by: "curator" as const, source: { chatId: c.id, ref }, note: "n", stance: "confirm" as const, question: ref, subject: "Physics", ...(text ? { text } : {}) });
+		memoryStore.write({ version: 1, areas: { Physics: { K: "k" } }, memories: [{ id: "m_ev0000", kind: "mistake", subject: "Physics", area: "K", entries: [s("r0", "Drops signs."), s("u1")] }] });
+		const evidence = readMemoryView().subjects[0]!.areas[0]!.memories[0]!.evidence.map((e) => (typeof e.where === "object" ? e.where.anchor : e.where));
+		assert.deepEqual(evidence, ["q0", "u1"]);
+		const notices = await (await import("../app/api/memory/notices/route.ts")).GET(new Request(`http://test/api/memory/notices?chatId=${c.id}`));
+		assert.deepEqual(await notices.json(), { notices: [{ memoryId: "m_ev0000", text: "Drops signs.", anchor: "u1" }] });
+	});
+
 	it("an unreadable memory.json: writes are 503, GET reports the error, nothing is overwritten", async () => {
 		const file = path.join(TMP, "memory", "memory.json");
 		fs.writeFileSync(file, "{broken");

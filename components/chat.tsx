@@ -63,7 +63,8 @@ import { PracticeDock } from "@/components/practice-dock";
 import { ThinkingCard, type PracticeThinkingData } from "@/components/practice-cards";
 import { GraphContextCard, type GraphContextData } from "@/components/graph-context-card";
 import { TopBar } from "@/components/top-bar";
-import type { ArtifactPartProps, JobRecord, Phase3, QuestionAnswerData, QuestionFormDraft, TurnUsage, SessionPricing } from "@/src/core";
+import type { ArtifactPartProps, JobRecord, MemoryNoticeView, Phase3, QuestionAnswerData, QuestionFormDraft, TurnUsage, SessionPricing } from "@/src/core";
+import { RememberedLine } from "@/components/artifacts/remember-card";
 import type { LhViewMessage } from "@/src/core";
 import { PhaseChip, PhaseDivider } from "@/components/phase-divider";
 import {
@@ -266,6 +267,19 @@ export function Chat({
 	const sessionFindScopeRef = useRef<HTMLDivElement | null>(null);
 	const scrollContextRef = useRef<StickToBottomContext | null>(null);
 	const sourceTextParts = useMemo(() => firstSourceTextParts(messages), [messages]);
+	// Learner memory (plan 2026-11-10 Default 25): the curator's "remembered: …"
+	// lines, derived on read; refetched whenever memory changes.
+	const [memoryNotices, setMemoryNotices] = useState<MemoryNoticeView[]>([]);
+	const loadNotices = useCallback(() => {
+		fetch(`/api/memory/notices?chatId=${encodeURIComponent(chatId)}`)
+			.then((r) => (r.ok ? (r.json() as Promise<{ notices: MemoryNoticeView[] }>) : null))
+			.then((body) => body && setMemoryNotices(body.notices))
+			.catch(() => {});
+	}, [chatId]);
+	useEffect(loadNotices, [loadNotices]);
+	useServerEvent("memory-changed", loadNotices);
+	const noticesAt = (anchor: string) =>
+		memoryNotices.filter((n) => n.anchor === anchor).map((n) => <RememberedLine key={`notice-${n.memoryId}`} memoryId={n.memoryId} text={n.text} />);
 
 	// The reattach settled terminal → the sync-and-continue seam (below).
 	setReattachSettled(() => reattachSettledRef.current());
@@ -1472,7 +1486,12 @@ export function Chat({
 											case "data-compaction-cut":
 												return <CompactionCutDivider key={pi} data={part.data as CompactionDividerData} />;
 											case "data-practice-thinking":
-												return <ThinkingCard key={pi} data={part.data as PracticeThinkingData} />;
+												return (
+													<div key={pi} id={messageAnchorId(m.id)}>
+														<ThinkingCard data={part.data as PracticeThinkingData} />
+														{noticesAt(m.id)}
+													</div>
+												);
 											case "data-practice-next":
 												// The learner's move-on signal (owner round 16): a compact
 												// centered mono-caps line — chrome, the dismissal register.
@@ -1528,7 +1547,9 @@ export function Chat({
 										    User text renders plain — the model's LaTeX pipeline is not
 										    applied to learner-authored text ($ stays $, no surprises).
 										    Rendered WITHOUT the Message wrapper — that is the bubble. */
+											<>
 											<div
+										id={messageAnchorId(m.id)}
 										data-testid="user-message"
 										/* THE DOCUMENT, ALL-IN (owner rounds two+three, 2026-10-07):
 										    no chat side — the user message is a full-width card-color
@@ -1580,6 +1601,8 @@ export function Chat({
 													</div>
 												)}
 											</div>
+											{noticesAt(m.id)}
+											</>
 									) : (
 									<Message from="assistant" className="max-w-full">
 									<MessageContent className="w-full">
@@ -1662,7 +1685,10 @@ export function Chat({
 														// transcript; answered ones render as graded records.
 														if (part.state === "output-available") {
 															return (
-																<AnsweredCard key={pi} answer={part.output as QuestionAnswerData} input={part.input} />
+																<div key={pi} id={part.toolCallId ? messageAnchorId(part.toolCallId) : undefined}>
+																<AnsweredCard answer={part.output as QuestionAnswerData} input={part.input} />
+																{part.toolCallId && noticesAt(part.toolCallId)}
+															</div>
 															);
 														}
 														return null;
@@ -1681,6 +1707,16 @@ export function Chat({
 														// registry — add renderers there, not here.
 														if (part.type.startsWith("tool-")) {
 															const Renderer = artifactRenderers[part.type.slice("tool-".length)];
+															// Problem and conclusion cards carry an anchor and any
+															// memory notice citing them (plan 2026-11-10 task 15).
+															if (Renderer && (part.type === "tool-problem" || part.type === "tool-conclude")) {
+																return (
+																	<div key={pi} id={part.toolCallId ? messageAnchorId(part.toolCallId) : undefined}>
+																		<Renderer part={part as ArtifactPartProps["part"]} />
+																		{part.toolCallId && noticesAt(part.toolCallId)}
+																	</div>
+																);
+															}
 															if (Renderer) return <Renderer key={pi} part={part as ArtifactPartProps["part"]} />;
 														}
 														return null;

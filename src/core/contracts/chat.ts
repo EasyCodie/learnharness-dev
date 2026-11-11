@@ -52,6 +52,10 @@ export interface ChatRecord {
 	 *  spend too. Same parallel-log discipline as `turns` (nothing rides
 	 *  inside messages). Keyed by startedAt; idempotent appends. */
 	extractions?: ExtractionRunUsage[];
+	/** Append-only learner-memory curator usage log (plan 2026-11-10
+	 *  Default 26/63): one entry per curator pass on this chat, success or
+	 *  failure. Logged only; nothing displays it in v1. */
+	curations?: CurationRunUsage[];
 	/** Per-chat model/thinking overrides for the conversation agents. */
 	settings?: ChatSettings;
 	/** SCHEMA STAMP (schema-versioning wave, owner 2026-10-10): LAZY v1 —
@@ -112,6 +116,17 @@ export interface ExtractionRunUsage {
 		extractor: ExtractionStageUsage;
 		auditor: ExtractionStageUsage;
 	};
+}
+
+/** One curator pass's usage (keyed by startedAt; idempotent appends). */
+export interface CurationRunUsage {
+	startedAt: number;
+	at: string;
+	durationMs: number;
+	model: string;
+	steps: CallUsage[];
+	/** Operations applied; absent when the pass failed. */
+	ops?: number;
 }
 
 // ─── Usage accounting (the money channel) ─────────────────────────────────────

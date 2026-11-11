@@ -42,7 +42,7 @@ See [architecture](../../../docs/architecture.md#teaching-and-practice) for runt
 
 ## Learner memory block
 
-When the `memory.enabled` setting is on and `memory.json` is readable, the turn handler appends one more block after the composed prompt (before the Claude Code delivery rule): a fixed memory doctrine plus the Profile, the subject list and the session subject's index ([`memoryPromptBlock`](../../core/memory.ts)). It is not a fragment, so it is not editable under Settings → Agent → prompts, and it is absent (the prompt byte-identical) when memory is off. A change to the Profile or the subject index changes the system prompt, so the next reply starts uncached.
+When the `memory.enabled` setting is on and `memory.json` is readable, the turn handler appends one more block after the composed prompt (before the Claude Code delivery rule): a fixed memory doctrine, one role paragraph for the agent kind (prober, teacher or practice), then the Profile, the subject list and the session subject's index ([`memoryPromptBlock`](../../core/memory.ts)); the prober's block also lists the subject's knowledge memories. Only loaded memories appear (active or fading; never notes, faded ones or unconfirmed flawed thinking models). It is not a fragment, so it is not editable under Settings → Agent → prompts, and it is absent (the prompt byte-identical) when memory is off. A change to the Profile or the subject index changes the system prompt, so the next reply starts uncached.
 
 ## Editing fragments
 

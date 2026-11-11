@@ -84,7 +84,7 @@ import { NativeSubscriptionBackgroundAccess } from "./subscription-connections";
 /** One slot's display identity — the tier's roster as the row hint rides
  *  with the resolved default (owner: the hint ALWAYS names the default). */
 const SLOT_META: Record<ModelSlotName, { label: string; roster: string }> = {
-	strong: { label: "Strong", roster: "The main model for your sessions" },
+	strong: { label: "Strong", roster: "The main model for your sessions and the memory curator" },
 	cheap: { label: "Cheap", roster: "The assistants that research, build demos, and grade your work" },
 	vision: { label: "Vision", roster: "The assistants that draw and read PDFs" },
 };

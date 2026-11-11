@@ -2,7 +2,7 @@ import { Type } from "typebox";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { serverExecute } from "../tool-execute.ts";
 import type { ChatStore, MemoryStore } from "../../core/ports.ts";
-import { applyRemember, areaContents, areasOf, resolveName, sessionSubject, subjectIndex, subjectsOf } from "../../core/memory.ts";
+import { applyRemember, areaContents, resolveName, sessionSubject, subjectIndex, subjectsOf, visibleAreasOf } from "../../core/memory.ts";
 
 /**
  * The learner-memory tools (plan: docs/superpowers/plans/2026-11-10-learner-memory.md).
@@ -88,7 +88,8 @@ export function memoryTools(ctx: MemoryToolContext): Record<string, AgentTool<an
 			const current = currentSubject();
 			if (!current) throw new Error("Set the session's subject with memory_subject first.");
 			const file = ctx.memoryStore.read();
-			const areas = areasOf(file, current);
+			// Areas holding only hidden memories are not listed (plan Default 61).
+			const areas = visibleAreasOf(file, current);
 			const area = resolveName(areas, input.area);
 			if (!area) throw new Error(`No area named "${input.area.trim()}" under ${current}. Areas: ${areas.join(", ") || "none"}.`);
 			return areaContents(file, current, area);

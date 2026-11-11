@@ -54,6 +54,7 @@ import { catalogContextLimits, refreshConnectionCatalog } from "./model-catalog.
 import { emit } from "../core/events.ts";
 import { settledTurnResponse } from "./turn-runs.ts";
 import { memoryForTurn, reconcileMemoryAtSettle } from "./memory.ts";
+import { triggerCuration } from "./memory-curation.ts";
 import type { MemoryToolContext } from "../agent/tools/memory.ts";
 import { asAgentMessages } from "../core/native-messages.ts";
 import {
@@ -631,6 +632,19 @@ export async function handleChatInput(
 					// (extraction-UX redesign, 2026-09-24): the trigger compares
 					// against it and the pipeline's batches share it.
 					triggerExtraction(stores, extraction, chatId, effective.graph.extractionChunkTokens);
+				}
+				// Learner memory (plan 2026-11-10 task 14): the curator pass, when a
+				// milestone was reached. Skipped under tests (the extraction precedent;
+				// the service is pinned directly).
+				if (process.env.NODE_ENV !== "test" && (!requestCycle || requestCycle.dispatched) && effective.memory.enabled) {
+					triggerCuration(chatId, {
+						graph: graphToolsEnabled(effective),
+						engine: () => {
+							const spec = resolveRoleSpec("curator", stores.settingsStore.readSettings());
+							if (!spec || !connectionBackgroundAllowed(spec.provider) || !providerKeyPresent(spec.provider)) return null;
+							try { return piEngineForSpec(spec, true, undefined, retentionForSlot(ROLE_SLOT.curator)); } catch { return null; }
+						},
+					});
 				}
 				// PARKED DISMISSAL (owner, 2026-10-04): a dismissal that arrived
 				// mid-turn was parked by the dismiss route (202); now that

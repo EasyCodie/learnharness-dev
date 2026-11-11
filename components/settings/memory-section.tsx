@@ -7,7 +7,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { MEMORY_KINDS, MEMORY_KIND_LABELS, messageAnchorId, type MemoryKind, type MemoryLevel, type MemoryRow, type MemoryView } from "@/src/core";
+import { FLAWED_MIN_QUESTIONS, FLAWED_MIN_SESSIONS, MEMORY_KINDS, MEMORY_KIND_LABELS, messageAnchorId, type MemoryKind, type MemoryLevel, type MemoryRow, type MemoryView } from "@/src/core";
 import { useServerEvent } from "@/components/server-events";
 import { CommitInput, SettingsGroup, SettingsRow, ThinSelect, Toggle } from "./controls.tsx";
 
@@ -70,16 +70,16 @@ export function MemorySection({
 					<AddMemory act={act} subjects={subjects} areasFor={areasFor} profileFull={view.profile.length >= view.profileCap} />
 					<SettingsGroup label={`Profile (${view.profile.length} / ${view.profileCap})`} testid="memory-profile">
 						{view.profile.length === 0 && <p className="text-xs text-muted-foreground/70">Nothing yet.</p>}
-						{view.profile.map((m) => <MemoryItem key={m.id} memory={m} {...rowProps} />)}
+						<MemoryList memories={view.profile} group="Profile" rowProps={rowProps} />
 					</SettingsGroup>
 					{view.subjects.map((subject) => (
 						<SettingsGroup key={subject.name} label={subject.name} testid={`memory-subject-${subject.name}`}>
-							{subject.memories.map((m) => <MemoryItem key={m.id} memory={m} {...rowProps} />)}
+							<MemoryList memories={subject.memories} group={subject.name} rowProps={rowProps} />
 							{subject.areas.map((area) => (
 								<details key={area.name} open={area.memories.some((m) => m.id === initialRow) || undefined} className="group" data-testid={`memory-area-${area.name}`}>
 									<summary className="cursor-pointer list-none text-xs text-foreground [&::-webkit-details-marker]:hidden">
 										<span className="mr-1 inline-block transition-transform group-open:rotate-90">›</span>
-										{area.name} <span className="text-muted-foreground">({area.memories.length})</span>
+										{area.name} <span className="text-muted-foreground">({area.memories.filter((m) => m.status !== "note").length})</span>
 									</summary>
 									<div className="ml-3 mt-2 flex flex-col gap-2">
 										<CommitInput
@@ -87,7 +87,7 @@ export function MemorySection({
 											ariaLabel={`Description of ${area.name}`}
 											onCommit={(description) => void act("/api/memory/areas", "PUT", { subject: subject.name, area: area.name, description })}
 										/>
-										{area.memories.map((m) => <MemoryItem key={m.id} memory={m} {...rowProps} />)}
+										<MemoryList memories={area.memories} group={area.name} rowProps={rowProps} />
 									</div>
 								</details>
 							))}
@@ -100,6 +100,34 @@ export function MemorySection({
 }
 
 type Act = (url: string, method: string, body?: unknown) => Promise<boolean>;
+type RowProps = { open?: string; act: Act; subjects: string[]; areasFor: (s: string) => string[] };
+
+/** A list of memories; notes (fewer than 2 sightings) go under "Seen once". */
+function MemoryList({ memories, group, rowProps }: { memories: MemoryRow[]; group: string; rowProps: RowProps }) {
+	const notes = memories.filter((m) => m.status === "note");
+	return (
+		<>
+			{memories.filter((m) => m.status !== "note").map((m) => <MemoryItem key={m.id} memory={m} {...rowProps} />)}
+			{notes.length > 0 && (
+				<details open={notes.some((m) => m.id === rowProps.open) || undefined} className="group/s" data-testid={`memory-seen-once-${group}`}>
+					<summary className="cursor-pointer list-none text-xs text-muted-foreground [&::-webkit-details-marker]:hidden">
+						<span className="mr-1 inline-block transition-transform group-open/s:rotate-90">›</span>
+						Seen once ({notes.length})
+					</summary>
+					<div className="ml-3 mt-2 flex flex-col gap-2">{notes.map((m) => <MemoryItem key={m.id} memory={m} {...rowProps} />)}</div>
+				</details>
+			)}
+		</>
+	);
+}
+
+/** The status shown beside a memory; nothing when it is simply active. */
+function statusLabel(m: MemoryRow): string | null {
+	if (m.status === "fading") return "Fading";
+	if (m.status === "faded") return "Faded";
+	if (m.status === "unconfirmed") return `Unconfirmed (${m.progress?.questions ?? 0} of ${FLAWED_MIN_QUESTIONS} questions, ${m.progress?.sessions ?? 0} of ${FLAWED_MIN_SESSIONS} sessions)`;
+	return null;
+}
 
 interface Placement {
 	level: MemoryLevel;
@@ -170,6 +198,7 @@ function resolved(p: Placement, subjects: string[], areasFor: (s: string) => str
 function AddMemory({ act, subjects, areasFor, profileFull }: { act: Act; subjects: string[]; areasFor: (s: string) => string[]; profileFull: boolean }) {
 	const [open, setOpen] = useState(false);
 	const [kind, setKind] = useState<MemoryKind>("preference");
+	const [mark, setMark] = useState<"" | "sound" | "flawed">("");
 	const [text, setText] = useState("");
 	const [place, setPlace] = useState<Placement>(EMPTY_PLACEMENT);
 	if (!open) {
@@ -182,6 +211,13 @@ function AddMemory({ act, subjects, areasFor, profileFull }: { act: Act; subject
 				<ThinSelect value={kind} ariaLabel="Kind" onChange={(k) => setKind(k as MemoryKind)}>
 					{MEMORY_KINDS.map((k) => <option key={k} value={k}>{MEMORY_KIND_LABELS[k]}</option>)}
 				</ThinSelect>
+				{kind === "thinking" && (
+					<ThinSelect value={mark} ariaLabel="Sound or flawed" onChange={(v) => setMark(v as typeof mark)}>
+						<option value="">Unmarked</option>
+						<option value="sound">Sound</option>
+						<option value="flawed">Flawed</option>
+					</ThinSelect>
+				)}
 				<PlacementPicker value={place} onChange={setPlace} subjects={subjects} areasFor={areasFor} />
 			</div>
 			<textarea className={`${fieldClass} h-16 py-1`} aria-label="Memory text" placeholder="One specific sentence" value={text} onChange={(e) => setText(e.target.value)} />
@@ -192,7 +228,8 @@ function AddMemory({ act, subjects, areasFor, profileFull }: { act: Act; subject
 					className={linkClass}
 					disabled={blocked || !text.trim()}
 					onClick={async () => {
-						const ok = await act("/api/memory", "POST", { kind, text, ...placementBody(resolved(place, subjects, areasFor)) });
+						const flawed = kind === "thinking" && mark ? { flawed: mark === "flawed" } : {};
+						const ok = await act("/api/memory", "POST", { kind, text, ...flawed, ...placementBody(resolved(place, subjects, areasFor)) });
 						if (ok) { setText(""); setOpen(false); setPlace(EMPTY_PLACEMENT); }
 					}}
 				>Save</button>
@@ -210,7 +247,21 @@ function evidenceLine(e: MemoryRow["evidence"][number]) {
 	return <a className="underline-offset-2 hover:underline" href={href}>{e.where.chatTitle}</a>;
 }
 
-function MemoryItem({ memory, open, act, subjects, areasFor }: { memory: MemoryRow; open?: string; act: Act; subjects: string[]; areasFor: (s: string) => string[] }) {
+/** One evidence line: date, where, the sighting's subject and stance, the note, his quote. */
+function EvidenceItem({ e }: { e: MemoryRow["evidence"][number] }) {
+	return (
+		<li>
+			{e.at.slice(0, 10)} · {evidenceLine(e)}
+			{e.subject ? ` in ${e.subject}` : ""}
+			{e.stance === "contradict" ? " · contradicts" : ""}
+			{e.note && e.where !== "settings" ? ` — ${e.note}` : ""}
+			{e.quote && <span className="italic"> “{e.quote}”</span>}
+			{e.promotedFrom && <span className="block">Moved to Profile from {e.promotedFrom.subject}{e.promotedFrom.area ? ` › ${e.promotedFrom.area}` : ""}</span>}
+		</li>
+	);
+}
+
+function MemoryItem({ memory, open, act, subjects, areasFor }: { memory: MemoryRow } & RowProps) {
 	const [mode, setMode] = useState<"view" | "edit" | "move" | "delete">("view");
 	const [draft, setDraft] = useState(memory.text);
 	const [place, setPlace] = useState<Placement>(EMPTY_PLACEMENT);
@@ -221,15 +272,18 @@ function MemoryItem({ memory, open, act, subjects, areasFor }: { memory: MemoryR
 	return (
 		<details ref={ref} open={landed || undefined} className="group/m" data-testid={`memory-${memory.id}`}>
 			<summary className="flex cursor-pointer list-none items-baseline gap-2 text-xs [&::-webkit-details-marker]:hidden">
-				<span className="shrink-0 text-muted-foreground">{MEMORY_KIND_LABELS[memory.kind]}</span>
+				<span className="shrink-0 text-muted-foreground">
+					{MEMORY_KIND_LABELS[memory.kind]}
+					{memory.flawed !== undefined ? ` · ${memory.flawed ? "Flawed" : "Sound"}` : ""}
+				</span>
 				<span className="min-w-0 flex-1 font-prose text-(length:--lh-prose-size)">{memory.text}</span>
+				{statusLabel(memory) && <span className="shrink-0 text-muted-foreground" data-testid="memory-status">{statusLabel(memory)}</span>}
 				<span className="shrink-0 text-muted-foreground/70">{memory.at.slice(0, 10)}</span>
 			</summary>
 			<div className="ml-3 mt-2 flex flex-col gap-2 text-xs text-muted-foreground">
+				{memory.propositions && <p>Linked: {memory.propositions.map((p) => p.name).join(", ")}</p>}
 				<ul className="flex flex-col gap-1" data-testid="memory-evidence">
-					{memory.evidence.map((e, i) => (
-						<li key={i}>{e.at.slice(0, 10)} · {evidenceLine(e)}{e.note && e.where !== "settings" ? ` — ${e.note}` : ""}</li>
-					))}
+					{memory.evidence.map((e, i) => <EvidenceItem key={i} e={e} />)}
 				</ul>
 				{mode === "edit" && (
 					<div className="flex flex-col gap-2">
@@ -263,6 +317,14 @@ function MemoryItem({ memory, open, act, subjects, areasFor }: { memory: MemoryR
 						<ThinSelect value={memory.kind} ariaLabel="Change kind" onChange={(kind) => void act(url, "PUT", { kind })}>
 							{MEMORY_KINDS.map((k) => <option key={k} value={k}>{MEMORY_KIND_LABELS[k]}</option>)}
 						</ThinSelect>
+						{memory.kind === "thinking" && (
+							// Ivan's own mark is his statement (plan Default 56).
+							<ThinSelect value={memory.flawed === undefined ? "" : memory.flawed ? "flawed" : "sound"} ariaLabel="Sound or flawed" onChange={(v) => { if (v) void act(url, "PUT", { flawed: v === "flawed" }); }}>
+								{memory.flawed === undefined && <option value="">Unmarked</option>}
+								<option value="sound">Sound</option>
+								<option value="flawed">Flawed</option>
+							</ThinSelect>
+						)}
 						<button type="button" className={linkClass} onClick={() => setMode("delete")}>Delete</button>
 					</div>
 				)}

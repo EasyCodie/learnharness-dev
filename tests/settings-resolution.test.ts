@@ -139,6 +139,12 @@ describe("the slot tier (BYOK, owner 2026-09-22)", () => {
 		}
 		// other tiers untouched (empty)
 		assert.equal(eff.agent.models.visualMaker, undefined);
+		assert.equal(eff.agent.models.curator, undefined);
+	});
+
+	it("the memory curator draws from the strong slot (plan 2026-11-10 Default 62)", () => {
+		const eff = resolveSettings({ version: 1, models: { strong: { model: { provider: "claude-code", id: "opus" }, thinkingLevel: "low" } } });
+		assert.deepEqual(eff.agent.models.curator, { provider: "claude-code", id: "opus", thinkingLevel: "low" });
 	});
 
 	it("role override still beats the slot; each field independent", () => {

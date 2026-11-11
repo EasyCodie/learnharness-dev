@@ -96,6 +96,27 @@ describe("memory tools", () => {
 		assert.match(await h.text("memory_read", { area: "waves" }), /\(preference\) Wants a diagram/);
 	});
 
+	it("memory_read never shows notes or unconfirmed flawed models, nor an area holding only them", async () => {
+		const curator = (ref: string, chatId = "chat_x") => ({ at: "2026-11-11T00:00:00.000Z", by: "curator" as const, source: { chatId, ref }, note: "n", stance: "confirm" as const, question: ref, subject: "Physics" });
+		const file: MemoryFile = {
+			version: 1,
+			areas: { Physics: { Hidden: "only hidden", Shown: "has one loaded" } },
+			memories: [
+				{ id: "m_note00", kind: "mistake", subject: "Physics", area: "Hidden", entries: [{ ...curator("q1"), text: "SENTINEL_NOTE" }] },
+				{ id: "m_flaw00", kind: "thinking", flawed: true, subject: "Physics", area: "Shown", entries: [{ ...curator("q1"), quote: "x", text: "SENTINEL_FLAWED" }, { ...curator("q2"), quote: "x" }, { ...curator("q3"), quote: "x" }] },
+				{ id: "m_actv00", kind: "mistake", subject: "Physics", area: "Shown", entries: [{ ...curator("q1"), text: "Drops signs." }, curator("q2")] },
+			],
+		};
+		const h = harness([], file);
+		const index = await h.text("memory_subject", { subject: "Physics" });
+		assert.doesNotMatch(index, /Hidden|SENTINEL/);
+		assert.match(index, /Shown: has one loaded/);
+		await assert.rejects(h.run("memory_read", { area: "Hidden" }), /Areas: Shown/);
+		const shown = await h.text("memory_read", { area: "Shown" });
+		assert.match(shown, /Drops signs\./);
+		assert.doesNotMatch(shown, /SENTINEL/);
+	});
+
 	it("duplicate guard and replaces through the tool", async () => {
 		const h = harness();
 		await h.run("memory_subject", { subject: "Physics", new: true });

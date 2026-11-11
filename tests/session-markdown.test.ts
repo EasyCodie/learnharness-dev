@@ -91,6 +91,45 @@ describe("messageMarkdown", () => {
 		assert.match(md, /\*\(his thinking: mixed up signs\)\*/);
 	});
 
+	it("his work on a check: chosen option, confidence, thinking (renamed key) and thinking while reading (plan 2026-11-10 Default 58)", () => {
+		const md = messageMarkdown(
+			result("r1", "q1", "quiz", {
+				questionText: "Which is the derivative of x²?",
+				answers: [{ index: 2, label: "2x" }],
+				correct: true,
+				dontKnow: false,
+				confidence: 80,
+				thinking: "power rule: bring the 2 down",
+				readingThinking: "so the slope doubles",
+			}),
+			"r1",
+		)!;
+		assert.match(md, /He chose: 2x/);
+		assert.match(md, /The learner answered correctly \(confidence 80%\)\./);
+		assert.match(md, /\*\(his thinking: power rule: bring the 2 down\)\*/);
+		assert.match(md, /\*\(his thinking while reading: so the slope doubles\)\*/);
+		const ask = messageMarkdown(result("r2", "a2", "ask_user_question", { questionText: "Which way?", answers: [{ index: 1, label: "first" }], thinking: "seems simpler" }), "r2")!;
+		assert.match(ask, /The learner chose: first/);
+		assert.match(ask, /his thinking: seems simpler/);
+	});
+
+	it("a practice thinking submission renders as his own block", () => {
+		const marker = { id: "t1", role: "custom", customType: "practice-thinking", content: "Your thinking:\nF = ma so a = 0", display: true, details: { problemCallId: "p1", text: "F = ma so a = 0" }, timestamp: 1 } as never;
+		assert.equal(messageMarkdown(marker, "t1"), "### Learner's thinking · t1\n\nF = ma so a = 0");
+		const next = { id: "n1", role: "custom", customType: "practice-next", content: "x", display: true, details: null, timestamp: 1 } as never;
+		assert.equal(messageMarkdown(next, "n1"), null, "other markers stay invisible");
+	});
+
+	it("rendering part of a session can use the whole record as context", () => {
+		const all = [
+			callMsg("a1", "p1", "problem", { statement: "Throw a ball up.", modelSolution: "a = g throughout" }),
+			result("r1", "p1", "problem", {}),
+			callMsg("a2", "c1", "conclude", { outcome: "solved", verdict: "Right." }),
+			result("r2", "c1", "conclude", {}),
+		];
+		assert.match(sessionMarkdown(all.slice(2), { context: all }), /Model solution\*\*\n>\n> a = g throughout/);
+	});
+
 	it("explain results: the learner's own words are shown", () => {
 		const md = messageMarkdown(
 			result("r1", "e1", "explain", { questionText: "Why does Mercury stay near the Sun?", text: "it never strays far" }),

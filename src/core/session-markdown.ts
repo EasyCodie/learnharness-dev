@@ -17,10 +17,11 @@
  * (2026-09-27): coverage fingerprints hash the line format and stay stable
  * (no mass re-extraction when presentation changes); markdown is
  * presentation. A failed tool call renders nothing (retry context, not
- * learning evidence); custom markers are invisible, same as the view.
+ * learning evidence); custom markers are invisible except his practice
+ * thinking submissions (plan 2026-11-10 Default 58).
  */
 
-import type { LhMessage } from "./native-messages.ts";
+import type { LhMarkerMessage, LhMessage } from "./native-messages.ts";
 import {
 	failedOutputCallIds,
 	PRACTICE_CONCLUDE_TOOL,
@@ -77,12 +78,23 @@ function toolResultBody(result: ToolResultMessage, ctx?: MarkdownContext): { hea
 				correct: boolean;
 				dontKnow: boolean;
 				note: string;
+				thinking: string;
+				readingThinking: string;
+				confidence: number;
 				text: string;
-				answers: string[];
+				answers: Array<string | { label?: string }>;
 				other: string;
 				dismissed: boolean;
 		  }>
 		| undefined;
+	// His work (plan 2026-11-10 Default 58): `thinking` replaced `note` in
+	// October; old records still carry `note`.
+	const chosenLabels = (Array.isArray(out?.answers) ? out!.answers! : []).map((a) => (typeof a === "string" ? a : a?.label ?? "")).filter(Boolean);
+	const thinking = out?.thinking ?? out?.note;
+	const hisThinking = (body: string[]) => {
+		if (typeof thinking === "string" && thinking) body.push(`*(his thinking: ${thinking})*`);
+		if (typeof out?.readingThinking === "string" && out.readingThinking) body.push(`*(his thinking while reading: ${out.readingThinking})*`);
+	};
 
 	if (
 		result.toolName === "quiz" ||
@@ -100,12 +112,14 @@ function toolResultBody(result: ToolResultMessage, ctx?: MarkdownContext): { hea
 						: "Recall check"; // explain — the teach free-recall name
 		const question = typeof out?.questionText === "string" && out.questionText ? out.questionText : "(no question text)";
 		const body = [`**Q:** ${question}`];
+		const confidence = typeof out?.confidence === "number" ? ` (confidence ${out.confidence}%)` : "";
+		if (out?.dismissed !== true && out?.dontKnow !== true && chosenLabels.length > 0) body.push(`He chose: ${chosenLabels.join("; ")}`);
 		if (out?.dismissed === true) body.push("The learner skipped this check.");
 		else if (out?.dontKnow === true) body.push("The learner did not know.");
-		else if (out?.correct === true) body.push("The learner answered correctly.");
-		else if (out?.correct === false) body.push("The learner answered incorrectly.");
+		else if (out?.correct === true) body.push(`The learner answered correctly${confidence}.`);
+		else if (out?.correct === false) body.push(`The learner answered incorrectly${confidence}.`);
 		else if (typeof out?.text === "string" && out.text.trim()) body.push(`The learner answered in his own words: ${out.text.trim()}`);
-		if (typeof out?.note === "string" && out.note) body.push(`*(his thinking: ${out.note})*`);
+		hisThinking(body);
 		return { heading, body };
 	}
 
@@ -135,14 +149,11 @@ function toolResultBody(result: ToolResultMessage, ctx?: MarkdownContext): { hea
 	if (result.toolName === "ask_user_question") {
 		const question = typeof out?.questionText === "string" && out.questionText ? out.questionText : "(no question text)";
 		const body = [`**Q:** ${question}`];
-		const chosen = [
-			...(Array.isArray(out?.answers) ? out!.answers! : []),
-			...(typeof out?.other === "string" && out.other.trim() ? [out.other.trim()] : []),
-		];
+		const chosen = [...chosenLabels, ...(typeof out?.other === "string" && out.other.trim() ? [out.other.trim()] : [])];
 		if (typeof out?.text === "string" && out.text.trim()) body.push(`The learner answered: ${out.text.trim()}`);
 		else if (chosen.length > 0) body.push(`The learner chose: ${chosen.join(", ")}`);
 		else if (out?.dismissed === true) body.push("The learner skipped this question.");
-		if (typeof out?.note === "string" && out.note) body.push(`*(his thinking: ${out.note})*`);
+		hisThinking(body);
 		return { heading: "Question", body };
 	}
 
@@ -173,6 +184,10 @@ export function messageMarkdown(
 		for (const text of userFacingTextOf((message as { content: unknown }).content, ctx?.failedOutputCalls ?? failedOutputCallIds([message]))) {
 			parts.push(`### Teacher${anchor}\n\n${text.trim()}`);
 		}
+	} else if (role === "custom" && (message as LhMarkerMessage).customType === "practice-thinking") {
+		// His practice work (plan 2026-11-10 Default 58); other markers stay invisible.
+		const text = (message as LhMarkerMessage).details as { text?: unknown } | null;
+		if (typeof text?.text === "string" && text.text.trim()) parts.push(`### Learner's thinking${anchor}\n\n${text.text.trim()}`);
 	} else if (role === "toolResult") {
 		const result = message as ToolResultMessage;
 		if (result.isError || result.toolName === SEND_TO_USER_TOOL) return null; // retry context or output ack, not learning evidence
@@ -180,7 +195,7 @@ export function messageMarkdown(
 		parts.push(`### ${heading}${anchor}\n\n${body.join("\n\n")}`);
 	}
 
-	// custom markers are invisible, same as the extraction view.
+	// Other custom markers are invisible, same as the extraction view.
 	return parts.length > 0 ? parts.join("\n\n") : null;
 }
 
@@ -192,11 +207,13 @@ export function messageMarkdown(
  */
 export function sessionMarkdown(
 	messages: ReadonlyArray<LhMessage>,
-	opts: { title?: string; anchors?: boolean } = {},
+	/** context: the whole record when `messages` is only part of it (the
+	 *  curator's span), so a conclusion still finds its problem. */
+	opts: { title?: string; anchors?: boolean; context?: ReadonlyArray<LhMessage> } = {},
 ): string {
 	const blocks: string[] = [];
 	if (opts.title !== undefined && opts.title.length > 0) blocks.push(`# ${opts.title}`);
-	const ctx = markdownContext(messages);
+	const ctx = markdownContext(opts.context ?? messages);
 	for (const message of messages) {
 		const block = messageMarkdown(message, (message as { id?: string }).id ?? "", opts.anchors ?? true, ctx);
 		if (block !== null) blocks.push(block);
