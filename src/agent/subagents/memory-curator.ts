@@ -7,16 +7,13 @@
  * seam, so a refused submit comes back to the curator to fix.
  *
  * Never imports the store or server layers: the memory file arrives through
- * `readFile` (fresh at each validation), the graph through its tool context.
+ * `readFile` (fresh at each validation).
  */
 
 import { Type } from "typebox";
 import type { Usage } from "@earendil-works/pi-ai";
-import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { PiEngine } from "../models.ts";
 import { runSubmitAgent } from "./submit-agent.ts";
-import { prepareAuditorReview, type GraphToolContext } from "../tools/graph.ts";
-import { getGraph } from "../../core/graph.ts";
 import { applyCuratorOps, curatorMemoryText, resolveName, subjectsOf, type CuratorContext, type CuratorSubmit } from "../../core/memory.ts";
 import type { MemoryFile } from "../../core/contracts/memory.ts";
 import type { LhMessage } from "../../core/native-messages.ts";
@@ -25,7 +22,7 @@ import { sessionMarkdown } from "../../core/session-markdown.ts";
 /** The approved curator system prompt (plan, "Prompt text"). */
 export const CURATOR_INSTRUCTIONS = `You maintain a long-term memory of one learner. You are given part of a finished teaching or practice session, with message ids, and what is already remembered for this subject. Record only what the session shows about the learner: what he holds and where it runs out (knowledge), how he reasons about the material (thinking model), and where he loses marks and on which kind of question (mistake pattern).
 
-Every item must cite the message ids of the answered questions or concluded problems that show it, with one line each saying what he did. Cite the question, not your commentary on it. If an existing memory or note already describes what you see, add a sighting to it, confirming or contradicting, instead of writing a new one. Revise a memory's wording only when the evidence shows it has changed. A single slip is still worth recording as one sighting; the system decides when sightings become a memory. Write each memory as one specific sentence that would help a tutor next month. File it under the area where it is true, reusing existing area names. Link knowledge memories to proposition ids when the graph tools show a clear match. If the session shows nothing worth recording, submit no items.
+Every item must cite the message ids of the answered questions or concluded problems that show it, with one line each saying what he did. Cite the question, not your commentary on it. If an existing memory or note already describes what you see, add a sighting to it, confirming or contradicting, instead of writing a new one. Revise a memory's wording only when the evidence shows it has changed. A single slip is still worth recording as one sighting; the system decides when sightings become a memory. Write each memory as one specific sentence that would help a tutor next month. File it under the area where it is true, reusing existing area names. If the session shows nothing worth recording, submit no items.
 
 You are also given the mistake patterns recorded under his other subjects. If a slip in this session is the same underlying mistake as one of them, add your sighting to that memory instead of writing a new one. When the same mistake is an established pattern in two subjects, promote it to the Profile: name every memory that describes it and give one wording that does not mention a subject. The system refuses a promotion that lacks the evidence and tells you what is missing; do not promote while the Profile is full.
 
@@ -54,7 +51,6 @@ const submitSchema = Type.Object({
 				newAreaDescription: Type.Optional(Type.String({ description: "Required for a new area: one line saying what it covers." })),
 				text: Type.String({ minLength: 1, description: "The memory: one specific sentence." }),
 				flawed: Type.Optional(Type.Boolean({ description: "Required for kind thinking: true = flawed model, false = sound model." })),
-				graphNodeIds: Type.Optional(Type.Array(Type.String(), { description: "Knowledge only: proposition ids from the graph tools." })),
 				evidence,
 			}),
 			Type.Object({
@@ -98,8 +94,6 @@ export interface CuratorRunInput {
 	readFile: () => MemoryFile;
 	/** The session's subject from the transcript, if set. */
 	sessionSubject: string | null;
-	/** Present when the graph tools are on. */
-	graph?: GraphToolContext;
 	engine: PiEngine | undefined;
 	signal?: AbortSignal;
 	onStep?: (usage: Usage, model: string) => void;
@@ -129,19 +123,13 @@ export function curatorPrompt(input: Pick<CuratorRunInput, "kind" | "messages" |
 export async function runMemoryCurator(input: CuratorRunInput): Promise<CuratorSubmit> {
 	const now = input.now ?? new Date();
 	const span = new Set(input.messages.slice(input.spanStart).map((m) => m.id));
-	const graphIds = input.graph ? new Set(getGraph(input.graph.graphStore).nodes.map((n) => n.id)) : undefined;
 	const ctx: CuratorContext = {
 		chatId: input.chatId,
 		messages: input.messages,
 		span,
 		sessionSubject: input.sessionSubject,
 		at: now.toISOString(),
-		...(graphIds ? { graphHas: (id: string) => graphIds.has(id) } : {}),
 	};
-	// The auditor's readers print proposition ids; find_candidates needs its own batch.
-	const extraTools: Record<string, AgentTool<any>> | undefined = input.graph
-		? (({ list_sessions, list_propositions }) => ({ list_sessions: list_sessions!, list_propositions: list_propositions! }))(prepareAuditorReview(input.graph).tools)
-		: undefined;
 	return runSubmitAgent<CuratorSubmit>({
 		role: "curator",
 		toolName: CURATOR_SUBMIT_TOOL,
@@ -154,8 +142,7 @@ export async function runMemoryCurator(input: CuratorRunInput): Promise<CuratorS
 		signal: input.signal,
 		onStep: (usage, model) => input.onStep?.(usage, model),
 		neverSubmitted: "the memory curator never submitted",
-		...(extraTools ? { extraTools } : {}),
-		maxTurns: extraTools ? 16 : 6,
+		maxTurns: 6,
 		chatId: input.chatId,
 		validate: (value) => {
 			const result = applyCuratorOps(input.readFile(), value, ctx);

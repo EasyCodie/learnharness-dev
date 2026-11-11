@@ -216,9 +216,6 @@ describe("applyCuratorOps validation", () => {
 		assert.match(refuse(emptyMemoryFile(), c, [{ op: "new", kind: "preference" as never, area: "K", newAreaDescription: "d", text: "t", evidence: [ev("v_r0")] }]), /preference/);
 		assert.match(refuse(emptyMemoryFile(), c, [{ op: "new", kind: "thinking", area: "K", newAreaDescription: "d", text: "t", evidence: [ev("v_r0")] }]), /flawed/);
 		assert.match(refuse(emptyMemoryFile(), c, [{ op: "new", kind: "mistake", area: "K", text: "t", evidence: [ev("v_r0")] }]), /newAreaDescription/);
-		assert.match(refuse(emptyMemoryFile(), c, [{ op: "new", kind: "knowledge", area: "K", newAreaDescription: "d", text: "t", evidence: [ev("v_r0")], graphNodeIds: ["n_1"] }]), /graph/);
-		assert.match(refuse(emptyMemoryFile(), { ...c, graphHas: (id) => id === "n_1" }, [{ op: "new", kind: "knowledge", area: "K", newAreaDescription: "d", text: "t", evidence: [ev("v_r0")], graphNodeIds: ["n_2"] }]), /n_2/);
-		assert.equal(apply(emptyMemoryFile(), { ...c, graphHas: (id) => id === "n_1" }, [{ op: "new", kind: "knowledge", area: "K", newAreaDescription: "d", text: "t", evidence: [ev("v_r0")], graphNodeIds: ["n_1"] }]).memories[0]!.graphNodeIds?.[0], "n_1");
 	});
 	it("an empty op list is a valid result and changes nothing", () => {
 		const file = emptyMemoryFile();
@@ -505,8 +502,21 @@ describe("the prompt block in Phase 2", () => {
 
 	it("the doctrine covers everything he can see, the probe assessment included (Ivan, 2026-11-11)", () => {
 		for (const kind of ["prober", "teacher", "practice"] as const) {
-			assert.match(memoryPromptBlock(file, "Physics", kind, now), /never mention this section\. This holds for everything he can see, including the probe assessment and any summary: describe what this session shows, never what a memory says\./);
+			assert.match(memoryPromptBlock(file, "Physics", kind, now), /never mention this section\. This holds for everything he can see, including the probe assessment and any summary: describe what this session shows, never what a memory says\. Do not report that a remembered mistake or way of thinking did not appear, and call something a repeat only when both times are in this session\./);
 		}
+	});
+
+	it("the prober records a flawed model only when his thinking shows it (Default 82)", () => {
+		const block = memoryPromptBlock(file, "Physics", "prober", now);
+		assert.match(block, /give different answers\. If his thinking shows the flawed model, record that in the assessment\. If it does not, write nothing about it, in the assessment or in any message to him, and do not mention the wrong options you set to test it\./);
+		assert.doesNotMatch(block, /and record what his thinking shows/);
+	});
+
+	it("practice names a remembered mistake only as it happened here; a repeat only within the session (Default 81)", () => {
+		const block = memoryPromptBlock(file, "Physics", "practice", now);
+		assert.match(block, /name the mistake in your verdict as it happened in this problem, and do not say it has happened before\. If he makes the same mistake a second time in this session, you may say it is the same one as earlier in the session\./);
+		assert.match(block, /name it only when his thinking trace in this session shows it\./);
+		assert.doesNotMatch(block, /name the pattern in your verdict/);
 	});
 
 	it("each agent kind gets its own role paragraph, and the What to save sentence points after the session", () => {

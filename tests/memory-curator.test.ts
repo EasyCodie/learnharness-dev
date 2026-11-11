@@ -7,7 +7,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { createFauxCore, fauxAssistantMessage, fauxToolCall, type FauxResponseStep, type ToolCall } from "@earendil-works/pi-ai";
-import { getCurrentTools } from "@earendil-works/pi-ai/utils/transcript";
 import type { PiEngine } from "../src/agent/models.ts";
 import { CURATOR_SUBMIT_TOOL, runMemoryCurator, type CuratorRunInput } from "../src/agent/subagents/memory-curator.ts";
 import { applyCuratorOps, emptyMemoryFile } from "../src/core/memory.ts";
@@ -72,27 +71,6 @@ describe("the memory curator", () => {
 		const unmarked = { subject: "Physics", newSubject: true, ops: [{ ...NEW, kind: "thinking" }] };
 		await runMemoryCurator(base({ engine: engine([submit(unmarked, "s1"), submit({ subject: "Physics", ops: [] }, "s2")], [], results) }));
 		assert.match(results[0]!, /flawed: true/);
-	});
-
-	it("with the graph on, the curator gets the id-printing graph readers and graphNodeIds are checked against the graph", async () => {
-		const node = { id: "n_hooke", name: "Hooke's law", statement: "F = -kx", aliases: [], provenance: [] };
-		const graph = {
-			chatStore: { getChat: () => null, listChats: () => [] } as never,
-			graphStore: { readNodes: () => [node], readChains: () => [], readSessions: () => [], readSources: () => [], readCoverage: () => [] } as never,
-		};
-		let tools: string[] = [];
-		const results: string[] = [];
-		const faux = createFauxCore({});
-		const link = (ids: string[], id: string) => () => fauxAssistantMessage([fauxToolCall(CURATOR_SUBMIT_TOOL, { subject: "Physics", newSubject: true, ops: [{ ...NEW, kind: "knowledge", graphNodeIds: ids }] } as never, { id })], { stopReason: "toolUse" });
-		faux.setResponses([
-			(context) => { tools = getCurrentTools(context.messages).map((t) => t.name); return link(["n_missing"], "s1")(); },
-			(context) => { const last = context.messages.at(-1) as { content: { text?: string }[] }; results.push(last.content.map((c) => c.text ?? "").join("")); return link(["n_hooke"], "s2")(); },
-		]);
-		const out = await runMemoryCurator(base({ graph, engine: { model: faux.getModel(), streamFn: faux.streamSimple } }));
-		assert.ok(tools.includes("list_sessions") && tools.includes("list_propositions"), tools.join());
-		assert.ok(!tools.includes("find_candidates"));
-		assert.match(results[0]!, /no proposition has the id n_missing/);
-		assert.deepEqual((out.ops[0] as { graphNodeIds?: string[] }).graphNodeIds, ["n_hooke"]);
 	});
 
 	it("a span with nothing worth saving submits no ops", async () => {

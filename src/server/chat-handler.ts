@@ -638,7 +638,6 @@ export async function handleChatInput(
 				// the service is pinned directly).
 				if (process.env.NODE_ENV !== "test" && (!requestCycle || requestCycle.dispatched) && effective.memory.enabled) {
 					triggerCuration(chatId, {
-						graph: graphToolsEnabled(effective),
 						engine: () => {
 							const spec = resolveRoleSpec("curator", stores.settingsStore.readSettings());
 							if (!spec || !connectionBackgroundAllowed(spec.provider) || !providerKeyPresent(spec.provider)) return null;

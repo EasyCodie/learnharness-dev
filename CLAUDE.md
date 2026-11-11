@@ -20,6 +20,13 @@ npm run build            # Next production build (standalone output)
 
 CI runs `typecheck`, `test`, `lint`, then a separate standalone job: the native renderer tests under Electron (`npx electron --import tsx --test tests/pdf-native-render.test.ts ...` with `ELECTRON_RUN_AS_NODE=1 NODE_ENV=test`), `build`, and `scripts/smoke-provider-runtime.mjs`. Other `scripts/smoke-*.mjs` have prerequisites; read the script and `docs/development.md#checks` before running one. `npm run desktop:dist` is the signed macOS release path, not a quick local build.
 
+## Keeping tool output small
+
+- Tests: run with `NODE_OPTIONS=--test-reporter=dot` (e.g. `NODE_OPTIONS=--test-reporter=dot npm test`). It prints dots plus full detail for failures only, about 5 KB instead of 530 KB for the full suite. Use the default reporter only when you need per-test names, piped through `grep -E '✖|fail'`.
+- `typecheck`, `lint`, `build`: pipe through `| tail -40` (or `| grep -E 'error|warning' | head -40`), and rerun narrower if that isn't enough.
+- Never `cat` a source or log file: `grep -n` to find the lines, then Read with offset/limit. Cap `find`, `grep -r` and `git log` with `| head -50`; run `git diff --stat` first, then diff one file at a time.
+- Many files are 40–120 KB (`components/chat.tsx`, `components/graph-view.tsx`, `src/agent/subagents/extraction.ts`, the large `tests/*.test.ts`). Find the symbol with `grep -n`, then read only that range (~150 lines). Don't re-read a file that hasn't changed.
+
 ## Architecture
 
 Next.js app with an Electron host. The server owns agent runs, conversation records, background workers, and filesystem persistence; the browser projects those records into the lesson/practice UI and knowledge graph. Agents run on the Pi agent runtime (`@earendil-works/pi-agent-core`, `pi-ai`).

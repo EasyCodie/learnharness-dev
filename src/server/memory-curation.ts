@@ -20,8 +20,6 @@ import { stores } from "./stores.ts";
 export interface CurationDeps {
 	/** The curator's engine, or null when no model, key or background permission. */
 	engine: () => PiEngine | null;
-	/** The graph tools are on (graphToolsEnabled). */
-	graph: boolean;
 }
 
 interface CurationGlobal {
@@ -87,7 +85,6 @@ export async function curateChat(chatId: string, deps: CurationDeps, signal?: Ab
 				spanStart,
 				readFile: () => stores.memoryStore.read(),
 				sessionSubject: subject,
-				...(deps.graph ? { graph: { chatStore: stores.chatStore, graphStore: stores.graphStore } } : {}),
 				engine,
 				signal,
 				onStep: (usage, stepModel) => {

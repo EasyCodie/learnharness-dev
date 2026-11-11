@@ -52,14 +52,14 @@ describe("the curation service", () => {
 		const c = chatStore.createChat("Empty");
 		chatStore.saveMessages(c.id, [{ id: "u0", role: "user", content: "hi", timestamp: 1 } as never]);
 		let built = false;
-		assert.equal(await curateChat(c.id, { engine: () => { built = true; return null; }, graph: false }), "not-due");
+		assert.equal(await curateChat(c.id, { engine: () => { built = true; return null; } }), "not-due");
 		assert.equal(built, false);
 		assert.deepEqual(memoryStore.read(), emptyMemoryFile());
 	});
 
 	it("due: applies the submit, advances the cursor, logs usage once; then it is no longer due", async () => {
 		const { id } = practiceChat();
-		assert.equal(await curateChat(id, { engine: () => engine([submit({ subject: "Physics", newSubject: true, ops: [NEW] })]), graph: false }), "done");
+		assert.equal(await curateChat(id, { engine: () => engine([submit({ subject: "Physics", newSubject: true, ops: [NEW] })]) }), "done");
 		const file = memoryStore.read();
 		assert.equal(file.memories.length, 1);
 		assert.equal(memoryStatus(file.memories[0]!), "note");
@@ -67,40 +67,40 @@ describe("the curation service", () => {
 		assert.equal(file.cursors?.[id], "r1");
 		assert.equal(chatStore.getChat(id)!.curations?.length, 1);
 		assert.equal(chatStore.getChat(id)!.curations![0]!.ops, 1);
-		assert.equal(await curateChat(id, { engine: () => assert.fail("not due"), graph: false }), "not-due");
+		assert.equal(await curateChat(id, { engine: () => assert.fail("not due") }), "not-due");
 	});
 
 	it("an unreadable memory.json: skipped, never overwritten", async () => {
 		const { id } = practiceChat();
 		const file = path.join(TMP, "memory", "memory.json");
 		fs.writeFileSync(file, "{broken");
-		assert.equal(await curateChat(id, { engine: () => assert.fail("no model call"), graph: false }), "skipped");
+		assert.equal(await curateChat(id, { engine: () => assert.fail("no model call") }), "skipped");
 		assert.equal(fs.readFileSync(file, "utf-8"), "{broken");
 		memoryStore.write(emptyMemoryFile());
 	});
 
 	it("no model configured: skipped, cursor unchanged", async () => {
 		const { id } = practiceChat();
-		assert.equal(await curateChat(id, { engine: () => null, graph: false }), "skipped");
+		assert.equal(await curateChat(id, { engine: () => null }), "skipped");
 		assert.equal(memoryStore.read().cursors?.[id], undefined);
 	});
 
 	it("a failed pass leaves the cursor and the store unchanged but logs its usage", async () => {
 		const { id } = practiceChat();
 		const never = () => fauxAssistantMessage([{ type: "text", text: "no" }], { stopReason: "stop" });
-		assert.equal(await curateChat(id, { engine: () => engine([never]), graph: false }), "failed");
+		assert.equal(await curateChat(id, { engine: () => engine([never]) }), "failed");
 		assert.deepEqual(memoryStore.read(), emptyMemoryFile());
 		assert.equal(chatStore.getChat(id)!.curations?.length, 1);
 		assert.equal(chatStore.getChat(id)!.curations![0]!.ops, undefined);
 		// No retry at the next settle; the next milestone retries from the old cursor.
-		assert.equal(await curateChat(id, { engine: () => assert.fail("waits for a milestone"), graph: false }), "not-due");
+		assert.equal(await curateChat(id, { engine: () => assert.fail("waits for a milestone") }), "not-due");
 		const record = chatStore.getChat(id)!;
 		chatStore.saveMessages(id, [
 			...record.messages,
 			{ id: "a2", role: "assistant", timestamp: 1, stopReason: "toolUse", content: [{ type: "toolCall", id: "c2", name: "conclude", arguments: { outcome: "solved" } }] },
 			{ id: "r2", role: "toolResult", toolCallId: "c2", toolName: "conclude", isError: false, timestamp: 1, content: [], details: {} },
 		] as never);
-		assert.equal(await curateChat(id, { engine: () => engine([submit({ subject: "Physics", newSubject: true, ops: [NEW] })]), graph: false }), "done");
+		assert.equal(await curateChat(id, { engine: () => engine([submit({ subject: "Physics", newSubject: true, ops: [NEW] })]) }), "done");
 		assert.equal(memoryStore.read().memories[0]!.entries[0]!.source!.ref, "t0");
 	});
 
@@ -110,7 +110,7 @@ describe("the curation service", () => {
 			chatStore.saveMessages(id, messages.slice(0, 3));
 			return fauxAssistantMessage([fauxToolCall(CURATOR_SUBMIT_TOOL, { subject: "Physics", newSubject: true, ops: [NEW] } as never, { id: "s1" })], { stopReason: "toolUse" });
 		};
-		assert.equal(await curateChat(id, { engine: () => engine([undoThenSubmit]), graph: false }), "done");
+		assert.equal(await curateChat(id, { engine: () => engine([undoThenSubmit]) }), "done");
 		const file = memoryStore.read();
 		assert.equal(file.memories.length, 0);
 		assert.equal(file.cursors?.[id], "r0");

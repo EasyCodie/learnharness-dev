@@ -442,7 +442,7 @@ export interface CuratorEvidence {
 }
 
 export type CuratorOp =
-	| { op: "new"; kind: "knowledge" | "thinking" | "mistake"; area: string; newAreaDescription?: string; text: string; flawed?: boolean; evidence: CuratorEvidence[]; graphNodeIds?: string[] }
+	| { op: "new"; kind: "knowledge" | "thinking" | "mistake"; area: string; newAreaDescription?: string; text: string; flawed?: boolean; evidence: CuratorEvidence[] }
 	| { op: "sighting"; id: string; stance: "confirm" | "contradict"; evidence: CuratorEvidence[] }
 	| { op: "revise"; id: string; text: string; evidence: CuratorEvidence[] }
 	| { op: "promote"; ids: string[]; text: string; evidence: CuratorEvidence[] };
@@ -462,8 +462,6 @@ export interface CuratorContext {
 	/** The session's subject from the transcript (memory_subject), if any. */
 	sessionSubject: string | null;
 	at: string;
-	/** Present when the graph tools are on: does this proposition id exist? */
-	graphHas?: (id: string) => boolean;
 }
 
 /** Profile bar (Defaults 31, 41): among confirming curator sightings, two
@@ -623,18 +621,12 @@ function applyOne(file: MemoryFile, op: CuratorOp, subject: string, ctx: Curator
 			if (op.kind === "thinking" && typeof op.flawed !== "boolean") return { problems: ["a thinking memory needs flawed: true (a flawed model) or false (a sound one)."] };
 			if (op.kind !== "thinking" && op.flawed !== undefined) return { problems: ["flawed is only for thinking memories."] };
 			if (!op.text.trim()) return { problems: ["text must not be empty."] };
-			if (op.graphNodeIds?.length) {
-				if (op.kind !== "knowledge") return { problems: ["graphNodeIds are only for knowledge memories."] };
-				if (!ctx.graphHas) return { problems: ["the graph tools are off; leave graphNodeIds out."] };
-				const missing = op.graphNodeIds.filter((id) => !ctx.graphHas!(id));
-				if (missing.length > 0) return { problems: [`no proposition has the id ${missing.join(", ")}.`] };
-			}
 			const place = resolvePlacement(file, { level: "area", subject, newSubject: true, area: op.area, newAreaDescription: op.newAreaDescription });
 			if ("problems" in place) return place;
 			const target = { kind: op.kind, ...(op.flawed !== undefined ? { flawed: op.flawed } : {}) };
 			const entries = entriesFor(op.evidence, target, "confirm", subject, ctx, { text: op.text.trim() });
 			if ("problems" in entries) return entries;
-			const memory: Memory = { id: newMemoryId(file), ...target, subject, area: place.area!, entries, ...(op.graphNodeIds?.length ? { graphNodeIds: [...new Set(op.graphNodeIds)] } : {}) };
+			const memory: Memory = { id: newMemoryId(file), ...target, subject, area: place.area!, entries };
 			const areas = place.newArea ? { ...file.areas, [subject]: { ...file.areas[subject], [place.area!]: op.newAreaDescription!.trim() } } : file.areas;
 			return { file: { ...file, memories: [...file.memories, memory], areas } };
 		}
@@ -749,7 +741,7 @@ function memoryDoctrine(kind: MemoryAgentKind): string {
 	const ask = kind === "practice" ? "ask him in one plain sentence" : "ask him with `ask_user_question`";
 	return `## Memory
 
-You keep a memory of this learner across sessions. What appears below was saved in earlier sessions. Use it without comment: never say that you remember something, and never mention this section. This holds for everything he can see, including the probe assessment and any summary: describe what this session shows, never what a memory says.
+You keep a memory of this learner across sessions. What appears below was saved in earlier sessions. Use it without comment: never say that you remember something, and never mention this section. This holds for everything he can see, including the probe assessment and any summary: describe what this session shows, never what a memory says. Do not report that a remembered mistake or way of thinking did not appear, and call something a repeat only when both times are in this session.
 
 **Where things are.** The Profile below is always loaded. Everything else is filed under a subject, then an area. As soon as the first messages make this session's subject clear, call \`memory_subject\` with it, reusing a name from the subject list when it is the same subject. If you cannot tell the subject after a few messages, ${ask}. Once the subject is set you see its areas with one-line descriptions; open an area with \`memory_read\` when its description is relevant to what you are about to do.
 
@@ -763,11 +755,11 @@ You keep a memory of this learner across sessions. What appears below was saved 
 /** Phase 2 role paragraphs (approved wording), one per agent kind. */
 const ROLE_PARAGRAPHS: Record<MemoryAgentKind, string> = {
 	prober:
-		"**Prober.** Knowledge memories for this subject are an earlier measurement of his edge. For each strand that has one, ask one question placed at the remembered edge. If the answer matches, the strand is bracketed; move on. If it does not, the memory is out of date: probe that strand as usual. Treat a memory marked old as a hint for where to open, not as a bracket. A thinking model marked flawed is a hypothesis: ask one question where the sound model and the flawed one give different answers, and record what his thinking shows.",
+		"**Prober.** Knowledge memories for this subject are an earlier measurement of his edge. For each strand that has one, ask one question placed at the remembered edge. If the answer matches, the strand is bracketed; move on. If it does not, the memory is out of date: probe that strand as usual. Treat a memory marked old as a hint for where to open, not as a bracket. A thinking model marked flawed is a hypothesis: ask one question where the sound model and the flawed one give different answers. If his thinking shows the flawed model, record that in the assessment. If it does not, write nothing about it, in the assessment or in any message to him, and do not mention the wrong options you set to test it.",
 	teacher:
 		"**Teacher.** Plan and present with his preferences and thinking-model memories in mind. Build from the models marked sound. A model marked flawed is a hypothesis recorded from earlier sessions, not a fact about him today: never tell him he thinks that way. Put a check where the sound model and the flawed one give different answers, read his thinking, and repair it only if he shows it again. Where a mistake pattern touches a step, put the check exactly there.",
 	practice:
-		"**Practice.** Choose problems that exercise his recorded mistake patterns for this area, without saying that is why. When he repeats one, name the pattern in your verdict. Treat a thinking model marked flawed as something to test, not to announce: choose a problem where it gives the wrong result, and name it only when his thinking trace shows it again.",
+		"**Practice.** Choose problems that exercise his recorded mistake patterns for this area, without saying that is why. When he makes one of them, name the mistake in your verdict as it happened in this problem, and do not say it has happened before. If he makes the same mistake a second time in this session, you may say it is the same one as earlier in the session. Treat a thinking model marked flawed as something to test, not to announce: choose a problem where it gives the wrong result, and name it only when his thinking trace in this session shows it.",
 };
 
 /** The full text appended to the system prompt when memory is on. */

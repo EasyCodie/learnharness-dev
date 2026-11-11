@@ -27,6 +27,7 @@ export function MemorySection({
 	onEnabledChange,
 	initialRow,
 	initialView,
+	onEvidenceOpen,
 }: {
 	enabled: boolean;
 	onEnabledChange: (on: boolean) => void;
@@ -34,6 +35,8 @@ export function MemorySection({
 	initialRow?: string;
 	/** Render tests pass the tree directly (no fetch under SSR). */
 	initialView?: MemoryView;
+	/** An evidence link was clicked: the dialog closes so the message is visible. */
+	onEvidenceOpen?: () => void;
 }) {
 	const [view, setView] = useState<MemoryView | null>(initialView ?? null);
 	const [error, setError] = useState<string | null>(null);
@@ -56,7 +59,7 @@ export function MemorySection({
 
 	const subjects = view?.subjects.map((s) => s.name) ?? [];
 	const areasFor = (subject: string) => view?.subjects.find((s) => s.name === subject)?.areas.map((a) => a.name) ?? [];
-	const rowProps = { open: initialRow, act, subjects, areasFor };
+	const rowProps = { open: initialRow, act, subjects, areasFor, onEvidenceOpen };
 
 	return (
 		<>
@@ -100,7 +103,7 @@ export function MemorySection({
 }
 
 type Act = (url: string, method: string, body?: unknown) => Promise<boolean>;
-type RowProps = { open?: string; act: Act; subjects: string[]; areasFor: (s: string) => string[] };
+type RowProps = { open?: string; act: Act; subjects: string[]; areasFor: (s: string) => string[]; onEvidenceOpen?: () => void };
 
 /** A list of memories; notes (fewer than 2 sightings) go under "Seen once". */
 function MemoryList({ memories, group, rowProps }: { memories: MemoryRow[]; group: string; rowProps: RowProps }) {
@@ -239,19 +242,24 @@ function AddMemory({ act, subjects, areasFor, profileFull }: { act: Act; subject
 	);
 }
 
-function evidenceLine(e: MemoryRow["evidence"][number]) {
+function evidenceLine(e: MemoryRow["evidence"][number], onOpen?: () => void) {
 	// Settings entries carry their own wording: "Added by you in Settings" / "Edited by you in Settings".
 	if (e.where === "settings") return <span>{e.note || "Added by you in Settings"}</span>;
 	if (e.where === "deleted") return <span>from a deleted session</span>;
 	const href = `/chat/${encodeURIComponent(e.where.chatId)}${e.where.anchor ? `#${encodeURIComponent(messageAnchorId(e.where.anchor))}` : ""}`;
-	return <a className="underline-offset-2 hover:underline" href={href}>{e.where.chatTitle}</a>;
+	const onClick = () => {
+		onOpen?.();
+		// The same message is already in the URL: no hashchange fires, so re-run the jump.
+		if (window.location.pathname + window.location.hash === href) window.dispatchEvent(new Event("hashchange"));
+	};
+	return <a className="underline-offset-2 hover:underline" href={href} onClick={onClick}>{e.where.chatTitle}</a>;
 }
 
 /** One evidence line: date, where, the sighting's subject and stance, the note, his quote. */
-function EvidenceItem({ e }: { e: MemoryRow["evidence"][number] }) {
+function EvidenceItem({ e, onOpen }: { e: MemoryRow["evidence"][number]; onOpen?: () => void }) {
 	return (
 		<li>
-			{e.at.slice(0, 10)} · {evidenceLine(e)}
+			{e.at.slice(0, 10)} · {evidenceLine(e, onOpen)}
 			{e.subject ? ` in ${e.subject}` : ""}
 			{e.stance === "contradict" ? " · contradicts" : ""}
 			{e.note && e.where !== "settings" ? ` — ${e.note}` : ""}
@@ -261,7 +269,7 @@ function EvidenceItem({ e }: { e: MemoryRow["evidence"][number] }) {
 	);
 }
 
-function MemoryItem({ memory, open, act, subjects, areasFor }: { memory: MemoryRow } & RowProps) {
+function MemoryItem({ memory, open, act, subjects, areasFor, onEvidenceOpen }: { memory: MemoryRow } & RowProps) {
 	const [mode, setMode] = useState<"view" | "edit" | "move" | "delete">("view");
 	const [draft, setDraft] = useState(memory.text);
 	const [place, setPlace] = useState<Placement>(EMPTY_PLACEMENT);
@@ -285,7 +293,7 @@ function MemoryItem({ memory, open, act, subjects, areasFor }: { memory: MemoryR
 			<div className="ml-3 mt-2 flex flex-col gap-2 text-xs text-muted-foreground">
 				{memory.propositions && <p>Linked: {memory.propositions.map((p) => p.name).join(", ")}</p>}
 				<ul className="flex flex-col gap-1" data-testid="memory-evidence">
-					{memory.evidence.map((e, i) => <EvidenceItem key={i} e={e} />)}
+					{memory.evidence.map((e, i) => <EvidenceItem key={i} e={e} onOpen={onEvidenceOpen} />)}
 				</ul>
 				{mode === "edit" && (
 					<div className="flex flex-col gap-2">

@@ -407,6 +407,7 @@ export function SettingsDialogBody({
 										enabled={record.memory?.enabled ?? true}
 										onEnabledChange={(on) => void write("memory", { enabled: on })}
 										initialRow={initialRow ?? undefined}
+										onEvidenceOpen={onClose}
 									/>
 								</SettingsSection>
 							)}
