@@ -67,7 +67,7 @@ Read the relevant installed Next guide under `node_modules/next/dist/docs/` befo
 ## Debugging
 
 - `LH_PROVIDER_EVENTS=1` saves raw provider events under the selected data root. They may contain private lesson/provider content.
-- `LH_BACKGROUND_CAPTURE=auditor` (or comma-separated roles, or `all`) captures background requests/results. Roles are `researcher`, `demoBuilder`, `extractor`, `auditor`, `visualMaker`, and `pdfReader`; foreground teaching/probing is excluded.
+- `LH_BACKGROUND_CAPTURE=auditor` (or comma-separated roles, or `all`) captures background requests/results. Roles are `researcher`, `demoBuilder`, `extractor`, `auditor`, `curator`, `visualMaker`, and `pdfReader`; foreground teaching/probing is excluded.
 
 For example:
 

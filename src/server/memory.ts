@@ -146,10 +146,9 @@ function anchorFor(messages: readonly LhMessage[], ref: string): string | null {
 }
 
 /** GET /api/memory/notices: the curator's "remembered: …" lines for one
- *  chat (Default 25), each anchored like evidence links. Empty when memory
- *  is off or unreadable. */
+ *  chat (Default 25), each anchored like evidence links. Shown whether or not
+ *  memory is on, like the in-chat "remembered" lines; empty when unreadable. */
 export function readMemoryNotices(chatId: string): MemoryNoticeView[] {
-	if (!effectiveSettings().memory.enabled) return [];
 	const chat = stores.chatStore.getChat(chatId);
 	if (!chat) return [];
 	let file: MemoryFile;

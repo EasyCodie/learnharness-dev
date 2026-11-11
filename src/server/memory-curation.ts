@@ -26,8 +26,12 @@ export interface CurationDeps {
 
 interface CurationGlobal {
 	__lhCurationRuns?: Set<string>;
+	/** chat → the last message of a span whose pass failed: the next pass
+	 *  waits for a new milestone after it (not every settle). */
+	__lhCurationFailedAt?: Map<string, string>;
 }
 const running = (): Set<string> => ((globalThis as CurationGlobal).__lhCurationRuns ??= new Set());
+const failedAt = (): Map<string, string> => ((globalThis as CurationGlobal).__lhCurationFailedAt ??= new Map());
 
 /** Start a pass in the background unless one is already running for this chat.
  *  A finished pass re-checks, so milestones reached meanwhile are not lost. */
@@ -58,6 +62,9 @@ export async function curateChat(chatId: string, deps: CurationDeps, signal?: Ab
 	}
 	const cursor = file.cursors?.[chatId];
 	if (!curationDue(record.messages, cursor)) return "not-due";
+	// After a failed pass, retry at the next milestone, not at every settle.
+	const failed = failedAt().get(chatId);
+	if (failed !== undefined && record.messages.some((m) => m.id === failed) && !curationDue(record.messages, failed)) return "not-due";
 	const engine = deps.engine();
 	if (!engine) {
 		// The cursor stays, so the next milestone retries.
@@ -90,9 +97,11 @@ export async function curateChat(chatId: string, deps: CurationDeps, signal?: Ab
 			}),
 		);
 		ops = applyCuration(chatId, submit, span, subject);
+		failedAt().delete(chatId);
 		return "done";
 	} catch (error) {
 		console.error(`[memory] curator pass failed for ${chatId}:`, error);
+		failedAt().set(chatId, record.messages.at(-1)!.id);
 		return "failed";
 	} finally {
 		if (steps.length > 0 && stores.chatStore.getChat(chatId)) {

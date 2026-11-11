@@ -276,8 +276,10 @@ function MemoryItem({ memory, open, act, subjects, areasFor }: { memory: MemoryR
 					{MEMORY_KIND_LABELS[memory.kind]}
 					{memory.flawed !== undefined ? ` · ${memory.flawed ? "Flawed" : "Sound"}` : ""}
 				</span>
-				<span className="min-w-0 flex-1 font-prose text-(length:--lh-prose-size)">{memory.text}</span>
-				{statusLabel(memory) && <span className="shrink-0 text-muted-foreground" data-testid="memory-status">{statusLabel(memory)}</span>}
+				<span className="min-w-0 flex-1 font-prose text-(length:--lh-prose-size)">
+					{memory.text}
+					{statusLabel(memory) && <span className="block font-ui text-xs text-muted-foreground" data-testid="memory-status">{statusLabel(memory)}</span>}
+				</span>
 				<span className="shrink-0 text-muted-foreground/70">{memory.at.slice(0, 10)}</span>
 			</summary>
 			<div className="ml-3 mt-2 flex flex-col gap-2 text-xs text-muted-foreground">

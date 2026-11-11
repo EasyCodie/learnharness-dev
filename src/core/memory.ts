@@ -267,9 +267,10 @@ export function resolvePlacement(
 	const area = resolveName(areas, input.area);
 	if (area) return { subject, area, newArea: false };
 	if (!input.newAreaDescription?.trim()) {
+		// Only areas with a loaded memory are named: hidden ones never reach an agent (Default 61).
 		return {
 			problems: [
-				`No area named "${input.area.trim()}" under ${subject}. Existing areas: ${areas.join(", ") || "none"}. Reuse one of them, or give newAreaDescription (one line saying what the area covers) to create it.`,
+				`No area named "${input.area.trim()}" under ${subject}. Existing areas: ${visibleAreasOf(file, subject).join(", ") || "none"}. Reuse one of them, or give newAreaDescription (one line saying what the area covers) to create it.`,
 			],
 		};
 	}
@@ -496,9 +497,20 @@ function statusLabel(m: Memory): string {
 	return `unconfirmed: ${questions} of ${FLAWED_MIN_QUESTIONS} questions, ${sessions} of ${FLAWED_MIN_SESSIONS} sessions`;
 }
 
+/** Mistake patterns and flawed models: sightings per subject, so the curator
+ *  can tell when a pattern is established in two subjects (Defaults 31, 41). */
+function bySubjectLabel(m: Memory): string {
+	if (m.kind !== "mistake" && !isFlawed(m)) return "";
+	const counts = profileBarCounts(m).map((c) => `${c.subject} ${c.questions} question${c.questions === 1 ? "" : "s"}${isFlawed(m) ? ` over ${c.sessions} session${c.sessions === 1 ? "" : "s"}` : ""}`);
+	if (counts.length === 0) return "";
+	// An app-computed fact, so the curator knows a promotion would pass.
+	const bar = m.placedByLearner ? "; placed by him in Settings, never promoted" : m.subject && meetsProfileBar(m) && memoryStatus(m) === "active" ? "; meets the Profile bar" : "";
+	return `; sightings by subject: ${counts.join(", ")}${bar}`;
+}
+
 /** The curator's view: every memory it may attach to, with ids and status. */
 export function curatorMemoryText(file: MemoryFile, subject: string | null, now: Date = new Date()): string {
-	const line = (m: Memory) => `- [${m.id}] (${m.kind}; ${statusLabel(m)}${strengthLine(m, now) ? `; ${strengthLine(m, now)}` : ""}) ${memoryText(m)}`;
+	const line = (m: Memory) => `- [${m.id}] (${m.kind}; ${statusLabel(m)}${strengthLine(m, now) ? `; ${strengthLine(m, now)}` : ""}${bySubjectLabel(m)}) ${memoryText(m)}`;
 	const profile = profileMemories(file);
 	const parts = [`### Profile (${profile.length} of ${PROFILE_CAP})\n${profile.map(line).join("\n") || "Empty."}`, `### Subjects\n${subjectsOf(file).join(", ") || "None yet."}`];
 	if (subject && subjectsOf(file).includes(subject)) {
@@ -509,7 +521,7 @@ export function curatorMemoryText(file: MemoryFile, subject: string | null, now:
 		parts.push(`### ${subject} (every memory, every status)\n${lines.join("\n")}`);
 	}
 	const others = otherSubjectMistakes(file, subject);
-	parts.push(`### Mistake patterns and flawed thinking models under his other subjects\n${others.map((m) => `- [${m.id}] (${m.subject}${m.area ? ` › ${m.area}` : ""}; ${m.kind}${isFlawed(m) ? ", flawed" : ""}; ${statusLabel(m)}) ${memoryText(m)}`).join("\n") || "None."}`);
+	parts.push(`### Mistake patterns and flawed thinking models under his other subjects\n${others.map((m) => `- [${m.id}] (${m.subject}${m.area ? ` › ${m.area}` : ""}; ${m.kind}${isFlawed(m) ? ", flawed" : ""}; ${statusLabel(m)}${bySubjectLabel(m)}) ${memoryText(m)}`).join("\n") || "None."}`);
 	return parts.join("\n\n");
 }
 
@@ -737,7 +749,7 @@ function memoryDoctrine(kind: MemoryAgentKind): string {
 	const ask = kind === "practice" ? "ask him in one plain sentence" : "ask him with `ask_user_question`";
 	return `## Memory
 
-You keep a memory of this learner across sessions. What appears below was saved in earlier sessions. Use it without comment: never say that you remember something, and never mention this section.
+You keep a memory of this learner across sessions. What appears below was saved in earlier sessions. Use it without comment: never say that you remember something, and never mention this section. This holds for everything he can see, including the probe assessment and any summary: describe what this session shows, never what a memory says.
 
 **Where things are.** The Profile below is always loaded. Everything else is filed under a subject, then an area. As soon as the first messages make this session's subject clear, call \`memory_subject\` with it, reusing a name from the subject list when it is the same subject. If you cannot tell the subject after a few messages, ${ask}. Once the subject is set you see its areas with one-line descriptions; open an area with \`memory_read\` when its description is relevant to what you are about to do.
 

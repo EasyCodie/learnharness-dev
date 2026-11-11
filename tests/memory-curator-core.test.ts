@@ -18,6 +18,7 @@ import {
 	applyRemember,
 	areaContents,
 	curationDue,
+	curatorMemoryText,
 	emptyMemoryFile,
 	learnerTextOf,
 	memoryNoticesFor,
@@ -126,9 +127,29 @@ describe("memory status from sightings", () => {
 		assert.match(memoryPromptBlock(first, null, "teacher"), /### Subjects\nPhysics/);
 	});
 
-	it("the duplicate guard and the Profile-full refusal never print hidden memories", () => {
-		const r = applyRemember(first, { text: "x", kind: "mistake", level: "area", subject: "Physics", area: "Kinematics", note: "n" }, { at: AT, by: "agent", source: { chatId: "chat_1", ref: "c" } });
+	it("the duplicate guard, the unknown-area refusal and the Profile-full refusal never print hidden memories or areas", () => {
+		const ctxA = { at: AT, by: "agent" as const, source: { chatId: "chat_1", ref: "c" } };
+		const r = applyRemember(first, { text: "x", kind: "mistake", level: "area", subject: "Physics", area: "Kinematics", note: "n" }, ctxA);
 		assert.ok(!("problems" in r), "no visible same-kind memory → no refusal");
+		const unknown = applyRemember(first, { text: "x", kind: "preference", level: "area", subject: "Physics", area: "Optics", note: "n" }, ctxA);
+		assert.ok("problems" in unknown);
+		assert.doesNotMatch(unknown.problems.join(), /Kinematics/);
+		// A full Profile holding a promoted pattern that has since faded.
+		let full: MemoryFile = { ...first, memories: [...first.memories, { id: "m_faded0", kind: "mistake", entries: [
+			{ at: AT, by: "curator", source: { chatId: "c", ref: "x1" }, note: "n", stance: "confirm", question: "x1", subject: "A", text: "SENTINEL_FADED" },
+			{ at: AT, by: "curator", source: { chatId: "c", ref: "x2" }, note: "n", stance: "confirm", question: "x2", subject: "A" },
+			{ at: AT, by: "curator", source: { chatId: "c", ref: "x3" }, note: "n", stance: "contradict", question: "x3", subject: "A" },
+			{ at: AT, by: "curator", source: { chatId: "c", ref: "x4" }, note: "n", stance: "contradict", question: "x4", subject: "A" },
+		] }] };
+		for (let i = 0; i < PROFILE_CAP - 1; i++) {
+			const added = applyRemember(full, { text: `p${i}`, kind: "preference", level: "profile", note: "n" }, { at: AT, by: "learner" });
+			assert.ok(!("problems" in added));
+			full = added.file;
+		}
+		const refusal = applyRemember(full, { text: "one more", kind: "preference", level: "profile", note: "n" }, ctxA);
+		assert.ok("problems" in refusal);
+		assert.match(refusal.problems.join(), /Profile is full \(15 of 15\)/);
+		assert.doesNotMatch(refusal.problems.join(), /SENTINEL_FADED/);
 	});
 });
 
@@ -305,6 +326,15 @@ describe("promotion to the Profile", () => {
 		assert.deepEqual(back.areas, { Physics: { Kinematics: "Motion" } });
 	});
 
+	it("the curator sees each pattern's sightings by subject", () => {
+		const withMaths = apply(inPhysics, cm, [{ op: "sighting", id: pid, stance: "confirm", evidence: [ev("ma_r0")] }], "Maths", true);
+		assert.match(curatorMemoryText(withMaths, "Maths"), /Physics › Kinematics; mistake; active; sightings by subject: Physics 2 questions, Maths 1 question\) Drops minus signs/);
+		const twice = apply(withMaths, cm, [{ op: "sighting", id: pid, stance: "confirm", evidence: [ev("ma_r1")] }], "Maths", true);
+		assert.match(curatorMemoryText(twice, "Maths"), /Physics 2 questions, Maths 2 questions; meets the Profile bar\)/);
+		const placed: MemoryFile = { ...twice, memories: twice.memories.map((m) => ({ ...m, placedByLearner: true })) };
+		assert.match(curatorMemoryText(placed, "Maths"), /Maths 2 questions; placed by him in Settings, never promoted\)/);
+	});
+
 	it("other subjects' notes are not offered for cross-subject sightings", () => {
 		const note = apply(emptyMemoryFile(), cp, [{ op: "new", kind: "mistake", area: "K", newAreaDescription: "d", text: "t", evidence: [ev("ph_r0")] }]);
 		assert.match(refuse(note, cm, [{ op: "sighting", id: only(note).id, stance: "confirm", evidence: [ev("ma_r0")] }], "Maths", true), /not shown/);
@@ -451,6 +481,43 @@ describe("flawed thinking models: the high bar", () => {
 		const mixed = apply(active, c1, [{ op: "new", kind: "mistake", area: "Kinematics", text: "Drops signs.", evidence: [ev("f1_r1")] }]);
 		const mid = mixed.memories.find((m) => m.kind === "mistake")!.id;
 		assert.match(refuse(mixed, c1, [{ op: "promote", ids: [id, mid], text: "x", evidence: [ev("f1_r2", quote)] }]), /mix/);
+	});
+});
+
+// ── agents use the new memories (task 16) ──────────────────────────────────
+
+describe("the prompt block in Phase 2", () => {
+	const s = teaching("k", ["a", "b", "c"]);
+	const c = ctx("chat_k", s);
+	let file = apply(emptyMemoryFile(), c, [
+		{ op: "new", kind: "knowledge", area: "Kinematics", newAreaDescription: "Motion", text: "Holds the range formula, not its derivation.", evidence: [ev("k_r0"), ev("k_r1")] },
+		{ op: "new", kind: "mistake", area: "Kinematics", text: "Drops the sign of g.", evidence: [ev("k_r0"), ev("k_r1"), ev("k_r2")] },
+	]);
+	file = { ...file, memories: file.memories.map((m) => (m.kind === "knowledge" ? { ...m, entries: m.entries.map((e) => ({ ...e, at: "2026-09-01T00:00:00.000Z" })) } : m)) };
+	const now = new Date("2026-11-11T12:00:00.000Z");
+
+	it("the prober's block lists knowledge memories with their date, old past 30 days", () => {
+		const block = memoryPromptBlock(file, "Physics", "prober", now);
+		assert.match(block, /### Knowledge memories for Physics\n- \[m_\w+\] \(knowledge; as of 2026-09-01, old\) Holds the range formula, not its derivation\. \[Kinematics\]/);
+		assert.match(block, /\*\*Prober\.\*\* Knowledge memories for this subject are an earlier measurement of his edge\./);
+		assert.doesNotMatch(memoryPromptBlock(file, "Physics", "teacher", now), /### Knowledge memories/);
+	});
+
+	it("the doctrine covers everything he can see, the probe assessment included (Ivan, 2026-11-11)", () => {
+		for (const kind of ["prober", "teacher", "practice"] as const) {
+			assert.match(memoryPromptBlock(file, "Physics", kind, now), /never mention this section\. This holds for everything he can see, including the probe assessment and any summary: describe what this session shows, never what a memory says\./);
+		}
+	});
+
+	it("each agent kind gets its own role paragraph, and the What to save sentence points after the session", () => {
+		assert.match(memoryPromptBlock(file, "Physics", "teacher", now), /\*\*Teacher\.\*\* Plan and present with his preferences/);
+		assert.match(memoryPromptBlock(file, "Physics", "practice", now), /\*\*Practice\.\*\* Choose problems that exercise his recorded mistake patterns/);
+		assert.doesNotMatch(memoryPromptBlock(file, "Physics", "practice", now), /\*\*Teacher\.\*\*|\*\*Prober\.\*\*/);
+		assert.match(memoryPromptBlock(file, null, "teacher", now), /how you think he reasons; that is recorded after the session\./);
+	});
+
+	it("area contents carry the strength line", () => {
+		assert.match(areaContents(file, "Physics", "Kinematics", now), /\(mistake; seen 3×, last 2026-11-11\) Drops the sign of g\./);
 	});
 });
 

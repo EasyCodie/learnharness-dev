@@ -84,7 +84,7 @@ const SUBMIT_DESCRIPTION =
 	"Submit everything this pass records, once. ops apply in order (a sighting before a promote counts toward it). " +
 	"Every evidence ref must be a message id from the session part: his answered check, the concluded problem, his thinking submission, or his own message; never a tutor message. " +
 	"new: a memory filed under an area of the subject. sighting: add evidence to an existing memory (confirm or contradict). revise: new wording for an existing memory. " +
-	"promote: merge mistake patterns (or flawed thinking models) established in two subjects into one Profile memory. " +
+	"promote: merge mistake patterns (or flawed thinking models) established in two subjects into one Profile memory; a memory listed with \"meets the Profile bar\" is established in two subjects. " +
 	"A refusal lists every problem; fix them and submit again. ops: [] is a valid submit.";
 
 export interface CuratorRunInput {
