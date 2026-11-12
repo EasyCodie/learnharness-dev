@@ -88,7 +88,7 @@ export function MemorySection({
 										<CommitInput
 											value={area.description}
 											ariaLabel={`Description of ${area.name}`}
-											onCommit={(description) => void act("/api/memory/areas", "PUT", { subject: subject.name, area: area.name, description })}
+											onCommit={(description) => act("/api/memory/areas", "PUT", { subject: subject.name, area: area.name, description })}
 										/>
 										<MemoryList memories={area.memories} group={area.name} rowProps={rowProps} />
 									</div>

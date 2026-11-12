@@ -13,7 +13,6 @@ import type { CallUsage } from "../core/contracts.ts";
 import type { MemoryFile } from "../core/contracts/memory.ts";
 import type { PiEngine } from "../agent/models.ts";
 import { runMemoryCurator } from "../agent/subagents/memory-curator.ts";
-import { withBgLlmSlot } from "../agent/subagents/bg-llm-semaphore.ts";
 import { callUsage } from "../agent/subagents/extraction.ts";
 import { stores } from "./stores.ts";
 
@@ -77,8 +76,8 @@ export async function curateChat(chatId: string, deps: CurationDeps, signal?: Ab
 	let model = `${engine.model.provider}:${engine.model.id}`;
 	let ops: number | undefined;
 	try {
-		const submit = await withBgLlmSlot(signal, () =>
-			runMemoryCurator({
+		// Per-request worker admission (runSubagent) replaced the old slot semaphore.
+		const submit = await runMemoryCurator({
 				chatId,
 				kind: record.kind === "practice" ? "practice" : "teach",
 				messages: record.messages,
@@ -91,8 +90,7 @@ export async function curateChat(chatId: string, deps: CurationDeps, signal?: Ab
 					steps.push(callUsage(usage));
 					model = stepModel;
 				},
-			}),
-		);
+			});
 		ops = applyCuration(chatId, submit, span, subject);
 		failedAt().delete(chatId);
 		return "done";

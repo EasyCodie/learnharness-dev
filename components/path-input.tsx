@@ -5,9 +5,10 @@ import { createPortal } from "react-dom";
 import type { MathfieldElement } from "mathlive";
 import { FilePathChip } from "./file-path-chip";
 import { isMathToggle, MathChip, preloadMathLive, type MathExit } from "./math-chip";
+import { CitationChip } from "./citation-chip";
 import { cn } from "../lib/utils";
 import {
-	adjacentPathRange, atomicPathRange, clampPathSelection, insertFilePaths, PATH_SOURCE_ATTRIBUTE,
+	adjacentPathRange, atomicPathRange, clampPathSelection, insertCitation, insertFilePaths, locateToken, PATH_SOURCE_ATTRIBUTE,
 	normalizePathEdit, normalizePathInputValue, pathInputStaticRange, PathInputHistory, readPathInput, readPathSelection, renderPathInput,
 	replacePathSelection, restorePathSelection,
 	type ChipHost, type PathEditSnapshot, type TextSelection,
@@ -18,12 +19,23 @@ export const INSERT_FILE_PATHS_EVENT = "lh:insert-file-paths";
 export const TOGGLE_MATH_EVENT = "lh:toggle-math";
 /** Bubbles FROM a PathInput root whenever an equation opens or closes; detail: { open }. */
 export const MATH_STATE_EVENT = "lh:math-state";
+/** detail: { link, onInserted?(range) } — insert a citation link at the saved caret. */
+export const INSERT_CITATION_EVENT = "lh:insert-citation";
+/** detail: { start, end, previous, source, spaceBefore?, spaceAfter? } —
+ *  replace a citation link (new comment), or remove it when source is null
+ *  (with the spaces its insertion added, for a cancelled fresh cite). */
+export const UPDATE_CITATION_EVENT = "lh:update-citation";
+export type CitationInsertedRange = { start: number; end: number; spaceBefore: boolean; spaceAfter: boolean };
+export type InsertCitationDetail = { link: string; onInserted?: (range: CitationInsertedRange) => void };
+export type UpdateCitationDetail = { start: number; end: number; previous: string; source: string | null; spaceBefore?: boolean; spaceAfter?: boolean };
 export type PathInputProps = Omit<React.HTMLAttributes<HTMLDivElement>, "children" | "dangerouslySetInnerHTML" | "defaultValue" | "onChange"> & {
 	value: string;
 	onValueChange: (value: string) => void;
 	placeholder?: string;
 	autoFocus?: boolean;
 	defaultDropTarget?: boolean;
+	/** Opt out of host file insertion and drop routing; normal text editing remains. */
+	fileInsertion?: boolean;
 	/** Native text-input semantics: strip CR/LF and leave Enter to the caller. */
 	singleLine?: boolean;
 };
@@ -39,20 +51,21 @@ type Controller = {
 const typeInto = (field: MathfieldElement, text: string) =>
 	field.executeCommand(["typedText", text, { focus: true, feedback: false, simulateKeystroke: true }]);
 const EMPTY_MATH = "\\(\\)";
-const mathEnd = (chip: ChipHost & { latex: string }) => chip.start + chip.latex.length + EMPTY_MATH.length;
+type MathHost = ChipHost & { token: { kind: "math" } };
+const isMathHost = (chip: ChipHost): chip is MathHost => chip.token.kind === "math";
 
 /**
  * A controlled plaintext editor. Only the source string is state; chips are atomic
  * views of it. React never reconciles the editable DOM after a native mutation.
  */
 export const PathInput = React.forwardRef<HTMLDivElement, PathInputProps>(function PathInput({
-	value, onValueChange, placeholder, autoFocus, defaultDropTarget = false, singleLine = false, className,
+	value, onValueChange, placeholder, autoFocus, defaultDropTarget = false, fileInsertion = true, singleLine = false, className,
 	onKeyDown, onFocus, onBlur, onInput, onPaste, onCopy, onCut,
 	onCompositionStart, onCompositionEnd, ...props
 }, forwardedRef) {
 	const rootRef = React.useRef<HTMLDivElement>(null);
 	const controllerRef = React.useRef<Controller | null>(null);
-	const callbacks = React.useRef({ onValueChange, singleLine });
+	const callbacks = React.useRef({ onValueChange, singleLine, fileInsertion });
 	const composing = React.useRef(false);
 	const [chips, setChips] = React.useState<ChipHost[]>([]);
 	const [active, setActive] = React.useState<{ host: HTMLElement; caret: "start" | "end" } | null>(null);
@@ -61,7 +74,7 @@ export const PathInput = React.forwardRef<HTMLDivElement, PathInputProps>(functi
 	const initial = React.useRef({ value: normalizePathInputValue(value, singleLine), autoFocus, singleLine });
 
 	React.useImperativeHandle(forwardedRef, () => rootRef.current!, []);
-	React.useLayoutEffect(() => { callbacks.current = { onValueChange, singleLine }; }, [onValueChange, singleLine]);
+	React.useLayoutEffect(() => { callbacks.current = { onValueChange, singleLine, fileInsertion }; }, [onValueChange, singleLine, fileInsertion]);
 
 	React.useLayoutEffect(() => {
 		const root = rootRef.current!;
@@ -73,6 +86,7 @@ export const PathInput = React.forwardRef<HTMLDivElement, PathInputProps>(functi
 		let pendingExternal: string | null = null;
 		let pendingPaths: string[] = [];
 		let pendingPaste: string[] = [];
+		let pendingCitations: InsertCitationDetail[] = [];
 		let mounted = true;
 		let hosts: ChipHost[] = [];
 		// The open equation edits `current` live without repainting (a repaint would destroy the field).
@@ -113,10 +127,10 @@ export const PathInput = React.forwardRef<HTMLDivElement, PathInputProps>(functi
 			change(replacePathSelection(current, saved, text));
 		}
 		function openMath(start: number, caret: "start" | "end", before = snapshot()) {
-			const chip = hosts.find((host): host is ChipHost & { latex: string } => "latex" in host && host.start === start);
+			const chip = hosts.find((host): host is MathHost => isMathHost(host) && host.token.start === start);
 			if (!chip) return false;
 			if (math) announce(false);
-			math = { host: chip.host, start, source: current.slice(start, mathEnd(chip)), before };
+			math = { host: chip.host, start, source: chip.token.text, before };
 			typed = "";
 			setActive({ host: chip.host, caret });
 			announce(true);
@@ -137,7 +151,7 @@ export const PathInput = React.forwardRef<HTMLDivElement, PathInputProps>(functi
 			insertMath();
 		}
 		function openChip(host: HTMLElement) {
-			const mathEntries = hosts.filter((h): h is ChipHost & { latex: string } => "latex" in h);
+			const mathEntries = hosts.filter(isMathHost);
 			let k = mathEntries.findIndex((h) => h.host === host);
 			if (k === -1) return;
 			if (math) {
@@ -146,9 +160,9 @@ export const PathInput = React.forwardRef<HTMLDivElement, PathInputProps>(functi
 				mathExit("after", false);
 				if (wasEmpty && j !== -1 && j < k) k--;
 			}
-			const freshMathEntries = hosts.filter((h): h is ChipHost & { latex: string } => "latex" in h);
+			const freshMathEntries = hosts.filter(isMathHost);
 			const target = freshMathEntries[k];
-			if (target) openMath(target.start, "end");
+			if (target) openMath(target.token.start, "end");
 		}
 		function mathChange(latex: string) {
 			if (!math) return;
@@ -188,7 +202,37 @@ export const PathInput = React.forwardRef<HTMLDivElement, PathInputProps>(functi
 			root.focus();
 			restorePathSelection(root, saved);
 		}
+		function cite(detail: InsertCitationDetail) {
+			if (composing.current) { pendingCitations.push(detail); return; }
+			remember();
+			const next = insertCitation(current, saved, detail.link);
+			change(next);
+			root.focus();
+			restorePathSelection(root, saved);
+			detail.onInserted?.(next.inserted);
+		}
+		function insertCitationEvent(event: Event) {
+			const detail = (event as CustomEvent<unknown>).detail as Partial<InsertCitationDetail> | null;
+			if (detail && typeof detail.link === "string") cite(detail as InsertCitationDetail);
+		}
+		function updateCitationEvent(event: Event) {
+			const detail = (event as CustomEvent<unknown>).detail as Partial<UpdateCitationDetail> | null;
+			if (!detail || typeof detail.previous !== "string" || typeof detail.start !== "number") return;
+			if (composing.current) return;
+			const found = locateToken(current, detail.start, detail.previous);
+			if (!found) return; // moved beyond recognition or deleted: never edit other text
+			let { start, end } = found;
+			const source = typeof detail.source === "string" ? detail.source : "";
+			if (detail.source === null) {
+				if (detail.spaceBefore && current[start - 1] === " ") start -= 1;
+				if (detail.spaceAfter && current[end] === " ") end += 1;
+			}
+			const value = current.slice(0, start) + source + current.slice(end);
+			const caret = start + source.length + (detail.source === null ? 0 : 1);
+			change({ value, selection: { anchor: Math.min(caret, value.length), focus: Math.min(caret, value.length) } });
+		}
 		function insertEvent(event: Event) {
+			if (!callbacks.current.fileInsertion) return;
 			const paths: unknown = (event as CustomEvent<unknown>).detail;
 			if (Array.isArray(paths) && paths.every((path) => typeof path === "string")) stage(paths);
 		}
@@ -261,11 +305,11 @@ export const PathInput = React.forwardRef<HTMLDivElement, PathInputProps>(functi
 			} else if ((event.key === "ArrowRight" || event.key === "ArrowLeft") && collapsed
 				&& !event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey) {
 				const forward = event.key === "ArrowRight";
-				const chip = hosts.find((host): host is ChipHost & { latex: string } =>
-					"latex" in host && (forward ? host.start : mathEnd(host)) === saved.focus);
+				const chip = hosts.find((host): host is MathHost =>
+					isMathHost(host) && (forward ? host.token.start : host.token.end) === saved.focus);
 				if (chip) {
 					event.preventDefault();
-					openMath(chip.start, forward ? "start" : "end");
+					openMath(chip.token.start, forward ? "start" : "end");
 				}
 			} else if ((event.metaKey || event.ctrlKey) && !event.altKey && (event.key.toLowerCase() === "z" || event.key.toLowerCase() === "y")) {
 				event.preventDefault();
@@ -327,6 +371,7 @@ export const PathInput = React.forwardRef<HTMLDivElement, PathInputProps>(functi
 				change({ value: nextValue, selection }, !reset, previous, notify);
 				if (pendingPaste.length) { const text = pendingPaste.join(""); pendingPaste = []; replace(text); }
 				if (pendingPaths.length) { const paths = pendingPaths; pendingPaths = []; stage(paths); }
+				if (pendingCitations.length) { const citations = pendingCitations; pendingCitations = []; citations.forEach(cite); }
 			});
 		}
 		controllerRef.current = {
@@ -356,6 +401,8 @@ export const PathInput = React.forwardRef<HTMLDivElement, PathInputProps>(functi
 		if (initial.current.autoFocus) { root.focus(); restorePathSelection(root, saved); }
 		root.addEventListener(INSERT_FILE_PATHS_EVENT, insertEvent);
 		root.addEventListener(TOGGLE_MATH_EVENT, toggleEvent);
+		root.addEventListener(INSERT_CITATION_EVENT, insertCitationEvent);
+		root.addEventListener(UPDATE_CITATION_EVENT, updateCitationEvent);
 		root.addEventListener("beforeinput", beforeInput);
 		root.addEventListener("input", input);
 		root.addEventListener("keydown", keyDown);
@@ -371,6 +418,8 @@ export const PathInput = React.forwardRef<HTMLDivElement, PathInputProps>(functi
 			controllerRef.current = null;
 			root.removeEventListener(INSERT_FILE_PATHS_EVENT, insertEvent);
 			root.removeEventListener(TOGGLE_MATH_EVENT, toggleEvent);
+			root.removeEventListener(INSERT_CITATION_EVENT, insertCitationEvent);
+			root.removeEventListener(UPDATE_CITATION_EVENT, updateCitationEvent);
 			root.removeEventListener("beforeinput", beforeInput);
 			root.removeEventListener("input", input);
 			root.removeEventListener("keydown", keyDown);
@@ -395,16 +444,16 @@ export const PathInput = React.forwardRef<HTMLDivElement, PathInputProps>(functi
 			aria-placeholder={placeholder}
 			contentEditable
 			suppressContentEditableWarning
-			data-file-path-input=""
+			data-file-path-input={fileInsertion ? "" : undefined}
 			data-empty={initial.current.value.length === 0 ? "true" : "false"}
-			data-file-path-default={defaultDropTarget ? "" : undefined}
+			data-file-path-default={fileInsertion && defaultDropTarget ? "" : undefined}
 			data-placeholder={placeholder}
 			className={cn("block w-full min-w-0 outline-none data-[empty=true]:before:pointer-events-none data-[empty=true]:before:text-muted-foreground data-[empty=true]:before:content-[attr(data-placeholder)]", singleLine ? "whitespace-pre break-normal overflow-x-auto overflow-y-hidden" : "whitespace-pre-wrap break-words overflow-y-auto", className)}
 			onKeyDown={(event) => {
 				if (composing.current || event.nativeEvent.isComposing || event.keyCode === 229) { event.stopPropagation(); return; }
 				onKeyDown?.(event);
 			}}
-			onFocus={(event) => { controllerRef.current?.remember(); void preloadMathLive(); onFocus?.(event); }}
+			onFocus={(event) => { controllerRef.current?.remember(); void preloadMathLive().catch(() => {}); onFocus?.(event); }}
 			onBlur={(event) => { controllerRef.current?.remember(); onBlur?.(event); }}
 			onInput={onInput}
 			onPaste={onPaste}
@@ -413,15 +462,16 @@ export const PathInput = React.forwardRef<HTMLDivElement, PathInputProps>(functi
 			onCompositionStart={onCompositionStart}
 			onCompositionEnd={onCompositionEnd}
 		>{initial.current.value}</div>
-		{chips.map((chip) => createPortal("path" in chip
-			? <FilePathChip path={chip.path} contentEditable={false} />
-			: <MathChip
-				latex={chip.latex}
-				caret={active?.host === chip.host ? active.caret : null}
-				onOpen={() => controllerRef.current?.openChip(chip.host)}
+		{chips.map(({ host, token }) => createPortal(token.kind === "path"
+			? <FilePathChip path={token.path} contentEditable={false} />
+			: token.kind === "math" ? <MathChip
+				latex={token.latex}
+				caret={active?.host === host ? active.caret : null}
+				onOpen={() => controllerRef.current?.openChip(host)}
 				onChange={(latex) => controllerRef.current?.mathChange(latex)}
 				onExit={(side, refocus) => controllerRef.current?.mathExit(side, refocus)}
 				onReady={(field) => controllerRef.current?.mathReady(field)}
-			/>, chip.host))}
+			/>
+			: <CitationChip citation={token.citation} variant="composer" contentEditable={false} source={{ start: token.start, end: token.end, link: token.text, host }} />, host))}
 	</>;
 });
