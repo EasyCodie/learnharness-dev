@@ -10,6 +10,8 @@ import { useOptionalInteractionLayers } from "./interaction-layers";
 import { isInteractionScopeEligible } from "./plugin-input-focus";
 import { PathInput } from "@/components/path-input";
 import { MathToggleButton } from "@/components/math-toggle-button";
+import { AttachFilesButton } from "@/components/attach-files-button";
+import { PendingImages, usePendingImages } from "@/components/pending-images";
 import { MalformedQuestion } from "@/components/malformed-question";
 import { ToolContentResponse } from "@/components/ai-elements/message";
 import { QuestionPreview } from "@/components/question-preview";
@@ -400,7 +402,10 @@ function QuestionDockForm({
 			? text.trim().length > 0
 			: sel.dontKnow || (sel.otherSelected && other.trim().length > 0) || sel.selected.size > 0;
 
-	const canSubmit = nativeCanSubmit || hasPendingInput?.(qd) === true;
+	// A typed answer may be a picture alone; a choice still needs an option picked.
+	const imageField = `${qd.mode === "text" ? "answer" : "thinking"}:${toolCallId}`;
+	const hasImages = usePendingImages(imageField).length > 0;
+	const canSubmit = nativeCanSubmit || hasPendingInput?.(qd) === true || (qd.mode === "text" && hasImages);
 	const currentQuestion = useRef(qd); currentQuestion.current = qd;
 	const mounted = useRef(true);
 	useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
@@ -905,6 +910,8 @@ function QuestionDockForm({
 			>
 				<div
 					data-testid={qd.mode === "text" ? "answer-field" : "thinking-field"}
+					data-attachment-composer="" // the attach menu opens above this field, not the whole dock
+					data-image-field={imageField}
 					className="rounded-[10px] border border-border/70 bg-background/60 transition-colors focus-within:border-primary/50"
 				>
 					<div className="px-2.5 pt-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -977,11 +984,11 @@ function QuestionDockForm({
 							)}
 						/>
 					)}
+					<PendingImages field={imageField} />
 					<div className="flex items-center justify-between gap-2 p-1">
-						<span aria-hidden className="pl-1.5 text-xs text-muted-foreground">
-								{compactionRunning ? "compacting session…" : "↵ submits · ⇧↵ newline"}
-						</span>
+						{compactionRunning && <span aria-hidden className="pl-1.5 text-xs text-muted-foreground">compacting session…</span>}
 						<MathToggleButton editorRef={qd.mode === "text" ? answerRef : thinkingRef} className="ml-auto size-9 rounded-[6px]" />
+						<AttachFilesButton editorRef={qd.mode === "text" ? answerRef : thinkingRef} className="size-9 rounded-[6px]" />
 						<Button
 							type="submit"
 							disabled={!canSubmit || compactionRunning || preparing}

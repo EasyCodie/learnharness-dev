@@ -7,6 +7,7 @@
  * with null details (the output-less part until the record persists).
  */
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -117,6 +118,27 @@ describe("read tool — image semantics (native content parts)", () => {
 		assert.equal(imagePart.mimeType, "image/png");
 		assert.match(imagePart.data!, /^[A-Za-z0-9+/]+={0,2}$/);
 		assert.equal(result.details, null, "image reads keep the record part output-less");
+	});
+
+	it("converts a HEIC photo to JPEG on macOS (iPhone AirDrop default)", { skip: process.platform !== "darwin" }, async () => {
+		const png = path.join(tmp, "photo.png");
+		const heic = path.join(tmp, "photo.HEIC");
+		const canvas = createCanvas(8, 8);
+		canvas.getContext("2d").fillRect(0, 0, 8, 8);
+		fs.writeFileSync(png, canvas.toBuffer("image/png"));
+		execFileSync("/usr/bin/sips", ["-s", "format", "heic", png, "--out", heic], { stdio: "ignore" });
+		const result = await readTool.execute!("test", { path: heic });
+		const parts = result.content as Array<{ type: string; text?: string; mimeType?: string }>;
+		assert.equal(parts.length, 2);
+		assert.match(parts[0]!.text!, /Read image file \[image\/jpeg\]/);
+		assert.equal(parts[1]!.type, "image");
+		assert.equal(parts[1]!.mimeType, "image/jpeg");
+	});
+
+	it("a damaged or missing HEIC fails with a message about that file", { skip: process.platform !== "darwin" }, async () => {
+		const bad = write("bad.heic", "not a photo");
+		await assert.rejects(readTool.execute!("test", { path: bad }), /Could not convert this HEIC image/);
+		await assert.rejects(readTool.execute!("test", { path: path.join(tmp, "gone.heic") }), /ENOENT.*gone\.heic/);
 	});
 
 	it("plain string results map to a single text part (parity)", async () => {

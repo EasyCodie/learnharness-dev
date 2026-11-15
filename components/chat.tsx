@@ -8,6 +8,8 @@ import { usePlugins } from "./plugins";
 import { PluginSubmissionRunner, SubmissionModelEpoch, type SubmissionAttempt } from "./plugin-submission-runner";
 import { submissionImages, type BuiltinSubmissionCapture, type PrepareBuiltinSubmission, type PrepareThinkingSubmission, type PreparePluginQuestionSubmission, type PreparePluginProblemSubmission } from "./plugin-submission-adapters";
 import { SubmittedImages } from "./submitted-images";
+import { clearPendingImages, takePendingImages } from "./pending-images";
+import type { ImageContent } from "@earendil-works/pi-ai";
 import { usePageSurfaceBoundary, SurfaceRegion } from "./plugin-surfaces";
 import { findSurfaceBoundary } from "./plugin-surface-targets";
 import { scheduleOpeningSubmission } from "./plugin-submission-opening";
@@ -100,7 +102,7 @@ import { TopBar } from "@/components/top-bar";
 import { PluginTopBarActions } from "@/components/plugin-chrome";
 import { usePluginShortcutPage } from "@/components/plugin-shortcuts";
 import { createPluginSessionActionContext, type PluginSessionViewInput } from "@/src/core";
-import type { SessionInputViewReader, SessionViewTargets, NativeQuestionViewState, ViewReaderRef } from "./session-view-readers";
+import { useViewReader, type SessionInputViewReader, type SessionViewTargets, type NativeQuestionViewState, type ViewReaderRef } from "./session-view-readers";
 import type { JobRecord, MemoryNoticeView, Phase3, QuestionAnswerData, QuestionFormDraft, TurnUsage, SessionPricing } from "@/src/core";
 import { RememberedLine } from "@/components/artifacts/remember-card";
 import type { LhViewMessage } from "@/src/core";
@@ -325,7 +327,7 @@ export function Chat({
 	const submissionMounted = useRef(true);
 	useEffect(() => { submissionMounted.current = true; return () => { submissionMounted.current = false; submissionRunner.dispose(); }; }, [submissionRunner]);
 	useEffect(() => () => submissionRunner.dispose(), [surfaceTarget, submissionRunner]);
-	const inputViewReader = useRef<(() => PluginSessionViewInput) | null>(null) as SessionInputViewReader;
+	const inputViewReader: SessionInputViewReader = useViewReader<PluginSessionViewInput>();
 	const [, refreshViewContext] = useState(0);
 	const notifyViewChanged = useCallback(() => { if (submissionMounted.current) refreshViewContext(value => value + 1); }, []);
 	inputViewReader.changed = notifyViewChanged;
@@ -348,6 +350,7 @@ export function Chat({
 			return false;
 		}
 	};
+	const composerImageField = `text:${chatId}`;
 	const textTarget = (): Extract<PluginSubmissionTarget, { type: "text" }> | undefined => surfaceTarget ? { type: "text", sessionId: chatId, sessionKind: kind === "practice" ? "practice" : "teaching", surfaceTarget, channels: ["content"] } : undefined;
 	const scrollContextRef = useRef<StickToBottomContext | null>(null);
 	const sourceTextParts = useMemo(() => firstSourceTextParts(messages), [messages]);
@@ -736,14 +739,18 @@ export function Chat({
 	const prepareBuiltin: PrepareBuiltinSubmission = ({ question, capture, isCurrent }: BuiltinSubmissionCapture) => {
 		const target = builtinTarget(question), original = pending;
 		if (!target || !original || busyRef.current || compacting) return;
-		void runSubmission(target, () => {
+		// The dock keys its pictures by mode: a typed answer's, or a choice's thinking.
+		const answerField = `answer:${original.toolCallId}`, thinkingField = `thinking:${original.toolCallId}`;
+		let answerImages: ImageContent[] = [], thinkingImages: ImageContent[] = [];
+		void runSubmission(target, async () => {
+			answerImages = await takePendingImages(answerField); thinkingImages = await takePendingImages(thinkingField);
 			const raw = capture();
 			saveQuestionDraft(original.key, { readingThinking: readingThinkingRef.current });
 			return { type: "answer", answer: {
 				...(raw.dontKnow !== undefined ? { dontKnow: raw.dontKnow } : {}), ...(raw.values !== undefined ? { values: raw.values } : {}),
 				...(raw.other !== undefined ? { other: raw.other } : {}), ...(raw.text !== undefined ? { text: raw.text } : {}),
-				...(raw.confidence !== undefined ? { confidence: raw.confidence } : {}), images: [],
-			}, thinking: { text: raw.thinking ?? "", images: [] }, readingThinking: { text: requiresReveal ? readingThinkingRef.current : "", images: [] } };
+				...(raw.confidence !== undefined ? { confidence: raw.confidence } : {}), images: answerImages,
+			}, thinking: { text: raw.thinking ?? "", images: thinkingImages }, readingThinking: { text: requiresReveal ? readingThinkingRef.current : "", images: [] } };
 		}, () => {
 			const now = pendingQuestionOf(submissionLive.current.nativeMessages);
 			return isCurrent() && !busyRef.current && now?.messageId === original.messageId && now.contentIndex === original.contentIndex && now.toolCallId === original.toolCallId && now.tool === original.tool;
@@ -755,7 +762,7 @@ export function Chat({
 			// Save newer native edits without changing the prepared payload.
 			capture(); saveQuestionDraft(original.key, { readingThinking: readingThinkingRef.current });
 			attempt.deliver();
-			return send({ type: "answer", toolCallId: original.toolCallId, occurrence: target.question.occurrence, answer: { ...answer, ...(images ? { images } : {}) } }, attempt.accepted, original.key, attempt.refused);
+			return send({ type: "answer", toolCallId: original.toolCallId, occurrence: target.question.occurrence, answer: { ...answer, ...(images ? { images } : {}) } }, () => { clearPendingImages(answerField, answerImages); clearPendingImages(thinkingField, thinkingImages); attempt.accepted(); }, original.key, attempt.refused);
 		});
 	};
 	const thinkingTarget = (): Extract<PluginSubmissionTarget, { type: "thinking" }> | undefined => {
@@ -766,12 +773,13 @@ export function Chat({
 	const prepareThinking: PrepareThinkingSubmission = (capture, clear) => {
 		const target = thinkingTarget();
 		if (!target || busyRef.current || compacting) return;
-		let captured = "";
-		void runSubmission(target, () => ({ type: "thinking", content: { text: captured = capture(), images: [] } }), () => !busyRef.current && JSON.stringify(activeProblemOccurrenceOf(submissionLive.current.nativeMessages)) === JSON.stringify(target.problem.occurrence), async (prepared, attempt) => {
+		const imageField = `thinking:${target.problem.occurrence.toolCallId}`;
+		let captured = "", attached: ImageContent[] = [];
+		void runSubmission(target, async () => { attached = await takePendingImages(imageField); return { type: "thinking", content: { text: captured = capture(), images: attached } }; }, () => !busyRef.current && JSON.stringify(activeProblemOccurrenceOf(submissionLive.current.nativeMessages)) === JSON.stringify(target.problem.occurrence), async (prepared, attempt) => {
 			if (prepared.type !== "thinking") return false;
 			if (!prepared.content.text.trim() && !prepared.content.images.length) throw new Error("Thinking text or images are required. Your input has been kept.");
 			attempt.deliver();
-			return send({ type: "thinking", problemCallId: target.problem.occurrence.toolCallId, occurrence: target.problem.occurrence, text: prepared.content.text, ...(prepared.content.images.length ? { images: prepared.content.images.map(image => ({ ...image })) } : {}) }, () => { clear(captured); attempt.accepted(); }, undefined, attempt.refused);
+			return send({ type: "thinking", problemCallId: target.problem.occurrence.toolCallId, occurrence: target.problem.occurrence, text: prepared.content.text, ...(prepared.content.images.length ? { images: prepared.content.images.map(image => ({ ...image })) } : {}) }, () => { clearPendingImages(imageField, attached); clear(captured); attempt.accepted(); }, undefined, attempt.refused);
 		});
 	};
 	const pluginProblemTarget = (): Extract<PluginSubmissionTarget, { type: "plugin-problem-submission" }> | undefined => {
@@ -807,16 +815,19 @@ export function Chat({
 		const target = pluginQuestionTarget();
 		if (!target || !pendingPlugin || busyRef.current || compacting) return Promise.resolve(false);
 		const original = pendingPlugin;
-		return runSubmission(target, () => {
+		const imageField = original.showThinking ? `thinking:${original.questionId}` : undefined;
+		let attached: ImageContent[] = [];
+		return runSubmission(target, async () => {
+			attached = await takePendingImages(imageField);
 			const raw = capture();
-			return { type: "plugin-question-answer", answer: raw.answer, answerImages: [], thinking: { text: raw.thinking ?? "", images: [] }, readingThinking: { text: raw.readingThinking ?? "", images: [] } };
+			return { type: "plugin-question-answer", answer: raw.answer, answerImages: [], thinking: { text: raw.thinking ?? "", images: attached }, readingThinking: { text: raw.readingThinking ?? "", images: [] } };
 		}, () => isCurrent() && !busyRef.current && pendingPluginQuestionOf(submissionLive.current.nativeMessages)?.questionId === original.questionId, async (prepared, attempt) => {
 			if (prepared.type !== "plugin-question-answer") return false;
 			const images = submissionImages(prepared, target.channels);
 			attempt.deliver();
 			return send({ type: "plugin-question-answer", questionId: original.questionId, occurrence: original.occurrence, answer: prepared.answer as Extract<ChatInput, { type: "plugin-question-answer" }>["answer"],
 				...(original.showThinking ? { thinking: prepared.thinking.text } : {}), ...(requiresReveal ? { readingThinking: prepared.readingThinking.text } : {}), ...(images ? { images } : {}),
-			}, attempt.accepted, undefined, attempt.refused);
+			}, () => { clearPendingImages(imageField, attached); attempt.accepted(); }, undefined, attempt.refused);
 		});
 	};
 	const prepareText = (supplied?: string, openingAccepted?: () => void, beforePost?: (captured: string) => boolean) => {
@@ -824,13 +835,15 @@ export function Chat({
 		if (!target || pendingRef.current || pluginOwnsDock || activeProblemRef.current || compacting) return Promise.resolve(false);
 		if (!busyRef.current && zeroKeys) { setSetupOpen(true); return Promise.resolve(false); }
 		if (!busyRef.current && selectedModelUnavailable(catalog, selectedModel)) { openModelPicker(); return Promise.resolve(false); }
-		let captured = "", capturedRevision = 0;
-		return runSubmission(target, () => { capturedRevision = composerEditRevision.current; return { type: "text", content: { text: captured = supplied ?? textRef.current.trim(), images: [] } }; }, () => submissionLive.current.ready && !pendingQuestionOf(submissionLive.current.nativeMessages) && !pendingPluginQuestionOf(submissionLive.current.nativeMessages) && !activeProblemOf(submissionLive.current.nativeMessages), async (prepared, attempt) => {
+		// A supplied text (the opening prompt) is not the composer's draft and carries no pictures.
+		const imageField = supplied === undefined ? composerImageField : undefined;
+		let captured = "", capturedRevision = 0, attached: ImageContent[] = [];
+		return runSubmission(target, async () => { attached = await takePendingImages(imageField); capturedRevision = composerEditRevision.current; return { type: "text", content: { text: captured = supplied ?? textRef.current.trim(), images: attached } }; }, () => submissionLive.current.ready && !pendingQuestionOf(submissionLive.current.nativeMessages) && !pendingPluginQuestionOf(submissionLive.current.nativeMessages) && !activeProblemOf(submissionLive.current.nativeMessages), async (prepared, attempt) => {
 			if (prepared.type !== "text") return false;
 			if (!prepared.content.text.trim() && !prepared.content.images.length) throw new Error("Message text or images are required. Your input has been kept.");
 			if (beforePost && !beforePost(captured)) { attempt.cancel(); return false; }
 			draftRef.current = captured;
-			const accepted = () => { if (composerEditRevision.current === capturedRevision && textRef.current.trim() === captured) applyText(""); openingAccepted?.(); attempt.accepted(); };
+			const accepted = () => { clearPendingImages(imageField, attached); if (composerEditRevision.current === capturedRevision && textRef.current.trim() === captured) applyText(""); openingAccepted?.(); attempt.accepted(); };
 			attempt.deliver();
 			if (busyRef.current) return steer(prepared.content.text, prepared.content.images, accepted, attempt.refused);
 			return send({ type: "text", text: prepared.content.text, ...(prepared.content.images.length ? { images: prepared.content.images.map(image => ({ ...image })) } : {}) }, accepted, undefined, attempt.refused);
@@ -2212,6 +2225,7 @@ export function Chat({
 							busy={busy}
 							value={textRef.current}
 							pendingInput={pendingTextInput}
+							imageField={composerImageField}
 							revision={composerDraftRevision}
 							onChange={recordComposerText}
 							inputRef={composerInputRef}
@@ -2602,9 +2616,9 @@ export function DockOverlay({
 	const readingInputRef = useRef<HTMLDivElement>(null);
 	const ownsDock = !!pending || !!pluginQuestion || unreadablePlugin || !!practice;
 	const initialPendingRef = useRef(pendingId);
-	const nativeViewReader = useRef<(() => NativeQuestionViewState) | null>(null) as ViewReaderRef<NativeQuestionViewState>;
-	const practiceViewReader = useRef<(() => string) | null>(null) as ViewReaderRef<string>;
-	const customViewReader = useRef<(() => { available: boolean }) | null>(null) as ViewReaderRef<{ available: boolean }>;
+	const nativeViewReader = useViewReader<NativeQuestionViewState>();
+	const practiceViewReader = useViewReader<string>();
+	const customViewReader = useViewReader<{ available: boolean }>();
 	nativeViewReader.changed = practiceViewReader.changed = customViewReader.changed = viewReader?.changed;
 
 	// Teach-question ARRIVAL state, applied during render — BEFORE the

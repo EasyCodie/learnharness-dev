@@ -8,6 +8,9 @@ import type { QuestionRendererRegistration } from "./plugin-manager";
 import { usePlugins } from "./plugins";
 import { QuestionDockBar } from "./question-dock";
 import { PathInput } from "./path-input";
+import { MathToggleButton } from "./math-toggle-button";
+import { AttachFilesButton } from "./attach-files-button";
+import { PendingImages } from "./pending-images";
 import { finishDictation, joinDictation, usePluginQuestionDictationTarget } from "./dictation";
 import { useOptionalInteractionLayers } from "./interaction-layers";
 import { isInteractionScopeEligible } from "./plugin-input-focus";
@@ -157,6 +160,8 @@ export function PluginQuestionDockContent({ viewReader, snapshot, chatId, draft,
 			{/* Plugin DOM is intentionally outside the footer's native form. */}
 			<form onSubmit={event => { event.preventDefault(); void submit(); }} className="border-t border-border/60 p-1.5">
 				<div data-testid={snapshot.showThinking ? "thinking-field" : undefined}
+					data-attachment-composer={snapshot.showThinking ? "" : undefined}
+					data-image-field={snapshot.showThinking ? `thinking:${snapshot.questionId}` : undefined}
 					className={snapshot.showThinking ? "rounded-[10px] border border-border/70 bg-background/60 transition-colors focus-within:border-primary/50" : undefined}>
 					{snapshot.showThinking && <>
 						<div className="px-2.5 pt-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">Your thinking</div>
@@ -165,11 +170,17 @@ export function PluginQuestionDockContent({ viewReader, snapshot, chatId, draft,
 							if (!isInteractionScopeEligible(event.currentTarget, controller)) return;
 							if (event.key === "Enter" && !event.altKey && (!event.shiftKey || event.metaKey || event.ctrlKey)) { event.preventDefault(); void submit(); }
 						}} className="field-sizing-content lh-input max-h-48 min-h-10 w-full resize-none bg-transparent px-2.5 py-2 outline-none placeholder:text-muted-foreground/70" placeholder="Your thinking" />
+						<PendingImages field={`thinking:${snapshot.questionId}`} />
 					</>}
 					<div className="flex items-center justify-between gap-2 p-1">
-						<span aria-hidden className="pl-1.5 text-xs text-muted-foreground">↵ submits · ⇧↵ newline</span>
 						{unavailable && <Button type="button" variant="ghost" disabled={!ready || submitting} onClick={() => { if (latch.current) return; latch.current = true; void finishDictation().then(dismiss).catch(() => {}).finally(() => { latch.current = false; }); }}>Dismiss question</Button>}
-						<Button type="submit" disabled={!canSubmit} className="ml-auto h-9 rounded-[6px] px-3.5 text-sm font-medium">Submit answer</Button>
+						<div className="ml-auto flex items-center gap-2">
+							{snapshot.showThinking && <>
+								<MathToggleButton editorRef={thinking} className="size-9 rounded-[6px]" />
+								<AttachFilesButton editorRef={thinking} className="size-9 rounded-[6px]" />
+							</>}
+							<Button type="submit" disabled={!canSubmit} className="h-9 rounded-[6px] px-3.5 text-sm font-medium">Submit answer</Button>
+						</div>
 					</div>
 				</div>
 			</form>

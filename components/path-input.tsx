@@ -6,6 +6,7 @@ import type { MathfieldElement } from "mathlive";
 import { FilePathChip } from "./file-path-chip";
 import { isMathToggle, MathChip, preloadMathLive, type MathExit } from "./math-chip";
 import { CitationChip } from "./citation-chip";
+import { attachImages } from "./pending-images";
 import { cn } from "../lib/utils";
 import {
 	adjacentPathRange, atomicPathRange, clampPathSelection, insertCitation, insertFilePaths, locateToken, PATH_SOURCE_ATTRIBUTE,
@@ -325,6 +326,9 @@ export const PathInput = React.forwardRef<HTMLDivElement, PathInputProps>(functi
 		function paste(event: ClipboardEvent) {
 			if (event.defaultPrevented) return;
 			event.preventDefault();
+			// A pasted picture becomes an image attachment where the field takes it.
+			const files = Array.from(event.clipboardData?.files ?? []);
+			if (attachImages(root, files).length < files.length) return;
 			const text = event.clipboardData?.getData("text/plain") ?? "";
 			// Image/file/HTML-only clipboard contents are not text replacement.
 			if (text === "") return;

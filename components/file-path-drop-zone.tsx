@@ -5,6 +5,7 @@ import { FileSymlinkIcon, XIcon } from "lucide-react";
 import { directoryReferencePath, quoteFilePath } from "@/src/core";
 import { appendToPrimaryInput } from "@/components/dictation";
 import { INSERT_FILE_PATHS_EVENT } from "@/components/path-input";
+import { attachImages, IMAGE_FIELD_ATTRIBUTE } from "@/components/pending-images";
 
 export const BROWSER_NOTICE = "Local file paths can only be attached in the desktop app. You can paste a full path instead.";
 
@@ -67,6 +68,13 @@ export function FilePathDropZone({ children, className, onContentRoot }: {
 				event.preventDefault();
 				event.stopPropagation();
 				clearDrag();
+				const active = document.activeElement?.closest<HTMLElement>("[data-file-path-input]");
+				const focused = active && event.currentTarget.contains(active) ? active : null;
+				// Pictures become real images where a field takes them (the focused
+				// one, else the page's): their bytes are read now, never a path.
+				const dropped = Array.from(event.dataTransfer.files);
+				const pathFiles = new Set(attachImages(focused ?? event.currentTarget.querySelector(`[${IMAGE_FIELD_ATTRIBUTE}]`), dropped));
+				if (dropped.length > 0 && pathFiles.size === 0) { setNotice(""); return; }
 				const resolve = window.lh?.getPathForFile;
 				if (!resolve) { setNotice(BROWSER_NOTICE); return; }
 				// Inspect only the dropped item's type, never traverse its entries.
@@ -74,7 +82,8 @@ export function FilePathDropZone({ children, className, onContentRoot }: {
 				const entries = Array.from(event.dataTransfer.items).filter((item) => item.kind === "file");
 				const paths: string[] = [];
 				let skipped = 0;
-				for (const [index, file] of Array.from(event.dataTransfer.files).entries()) {
+				for (const [index, file] of dropped.entries()) {
+					if (!pathFiles.has(file)) continue;
 					try {
 						let directory = false;
 						try { directory = entries[index]?.webkitGetAsEntry?.()?.isDirectory === true; }
@@ -89,8 +98,7 @@ export function FilePathDropZone({ children, className, onContentRoot }: {
 					setNotice("No local file paths were available. Drop existing files or folders from your computer.");
 					return;
 				}
-				const focused = document.activeElement?.closest<HTMLElement>("[data-file-path-input]");
-				if (focused && event.currentTarget.contains(focused)) {
+				if (focused) {
 					focused.dispatchEvent(new CustomEvent(INSERT_FILE_PATHS_EVENT, { detail: paths }));
 				} else if (!appendToPrimaryInput(paths.map(quoteFilePath).join(" "))) {
 					setNotice("Open a chat to attach file paths.");

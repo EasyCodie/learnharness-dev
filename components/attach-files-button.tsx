@@ -5,8 +5,10 @@ import { createPortal } from "react-dom";
 import { PaperclipIcon } from "lucide-react";
 import { directoryReferencePath, quoteFilePath } from "@/src/core";
 import { Hint } from "@/components/ui/hint";
+import { cn } from "@/lib/utils";
 import { INSERT_FILE_PATHS_EVENT } from "@/components/path-input";
 import { BROWSER_NOTICE } from "@/components/file-path-drop-zone";
+import { attachImages } from "@/components/pending-images";
 import { InteractionLayerOwner, useInteractionLayer, useInteractionLayers, useOptionalInteractionLayers } from "./interaction-layers";
 import { INTERACTION_LAYER_Z_BASE } from "./host-dialog";
 import { isInteractionScopeEligible } from "./plugin-input-focus";
@@ -81,7 +83,7 @@ function AttachmentPopup({ anchorRef, rootRef, open, close, children }: {
  * folder choice returns the directory itself, including an empty directory.
  * aria-disabled, not disabled, so the tooltip still shows.
  */
-export function AttachFilesButton({ editorRef }: { editorRef: React.RefObject<HTMLDivElement | null> }) {
+export function AttachFilesButton({ editorRef, className }: { editorRef: React.RefObject<HTMLDivElement | null>; className?: string }) {
 	const controller = useOptionalInteractionLayers();
 	const pickerRef = useRef<HTMLInputElement>(null);
 	const desktop = useDesktopPaths();
@@ -151,7 +153,9 @@ export function AttachFilesButton({ editorRef }: { editorRef: React.RefObject<HT
 				data-testid="attach-files-input"
 				onChange={(e) => {
 					const resolve = window.lh?.getPathForFile;
-					const { paths } = resolve ? pathsForFiles(Array.from(e.currentTarget.files ?? []), resolve) : { paths: [] };
+					// Pictures are captured now as real images where the field takes them; the rest stay paths.
+					const files = attachImages(editorRef.current, Array.from(e.currentTarget.files ?? []));
+					const { paths } = resolve ? pathsForFiles(files, resolve) : { paths: [] };
 					if (paths.length > 0) editorRef.current?.dispatchEvent(new CustomEvent(INSERT_FILE_PATHS_EVENT, { detail: paths }));
 					e.currentTarget.value = ""; // allow re-picking the same file
 				}}
@@ -166,7 +170,7 @@ export function AttachFilesButton({ editorRef }: { editorRef: React.RefObject<HT
 					aria-expanded={open}
 					data-testid="attach-files"
 					onClick={() => { if (desktop) { setNotice(""); setOpen(!open); } }}
-					className="flex size-10 shrink-0 items-center justify-center rounded-[10px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground aria-disabled:cursor-default aria-disabled:opacity-40 aria-disabled:hover:bg-transparent aria-disabled:hover:text-muted-foreground"
+					className={cn("flex size-10 shrink-0 items-center justify-center rounded-[10px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground aria-disabled:cursor-default aria-disabled:opacity-40 aria-disabled:hover:bg-transparent aria-disabled:hover:text-muted-foreground", className)}
 				>
 					<PaperclipIcon className="size-4" />
 				</button>

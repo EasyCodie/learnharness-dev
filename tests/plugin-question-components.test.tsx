@@ -523,11 +523,13 @@ for (const check of [false, true]) test(`healthy ${check ? "teach" : "probe"} th
 	assert.ok(submit); assert.equal(submit.disabled, false);
 	assert.equal(submit.textContent, "Submit answer");
 	assert.equal(input.classList.contains("min-h-[4.5rem]"), false, "even teaching starts with the approved compact field");
-	const hint = submit.parentElement?.querySelector('span[aria-hidden="true"]')!;
-	assert.ok(hint); assert.equal(hint.textContent, "↵ submits · ⇧↵ newline");
-	for (const token of ["pl-1.5", "text-xs", "text-muted-foreground"]) assert.ok(hint.classList.contains(token), token);
-	assert.ok(submit.parentElement?.classList.contains("p-1"));
-	for (const token of ["ml-auto", "h-9", "rounded-[6px]", "px-3.5", "text-sm", "font-medium"]) assert.ok(submit.classList.contains(token), token);
+	// Owner, 2026-11-13: no chord hint; Σ and the paperclip sit left of Submit.
+	const actions = submit.parentElement!;
+	assert.equal(frame.textContent?.includes("↵ submits"), false);
+	assert.deepEqual(Array.from(actions.querySelectorAll("button")).map(button => button.getAttribute("data-testid") ?? button.textContent), ["math-toggle", "attach-files", "Submit answer"]);
+	assert.ok(actions.classList.contains("ml-auto"));
+	assert.ok(actions.parentElement?.classList.contains("p-1"));
+	for (const token of ["h-9", "rounded-[6px]", "px-3.5", "text-sm", "font-medium"]) assert.ok(submit.classList.contains(token), token);
 	assert.equal(document.getElementById("plugin-editor")?.closest("form"), null, "arbitrary plugin DOM stays outside the host form");
 	assert.equal(Array.from(document.querySelectorAll("button")).some(button => button.textContent === "Dismiss question"), false);
 	assert.equal(f.state.dismissed, 0);

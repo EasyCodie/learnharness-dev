@@ -5,6 +5,7 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { serverExecute, type ImageFileResult } from "../tool-execute.ts";
 import { resolveSourcePath } from "./fs-shared.ts";
 import { detectSupportedImageMimeTypeFromFile, processImage } from "../image-processing/index.ts";
+import { heicFileToJpeg } from "../image-processing/heic.ts";
 
 /**
  * The read tool — sources v0 (2026-09): a Node port of pi's read semantics
@@ -95,12 +96,13 @@ export function createReadTool(model?: ReadModel): AgentTool<typeof readInput> {
 	return {
 		name: "read",
 		label: "read",
-		description: `Read the contents of a file. Supports text files and images (jpg, png, gif, webp, bmp). Images are sent as attachments. For text files, output is truncated to 2000 lines or 50.0KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete. File access settings and protected-location denials apply; use ls without a path to discover allowed folders when restricted.`,
+		description: `Read the contents of a file. Supports text files and images (jpg, png, gif, webp, bmp; heic on macOS). Images are sent as attachments. For text files, output is truncated to 2000 lines or 50.0KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete. File access settings and protected-location denials apply; use ls without a path to discover allowed folders when restricted.`,
 		parameters: readInput,
 		execute: serverExecute("read", readInput, async ({ path: rawPath, offset, limit }, { signal }): Promise<string | ImageFileResult> => {
 			const absolute = resolveSourcePath(rawPath);
-			const mime = await detectSupportedImageMimeTypeFromFile(absolute);
-			const buffer = await fs.readFile(absolute, { signal });
+			const heic = process.platform === "darwin" && /\.hei[cf]$/i.test(absolute) ? await heicFileToJpeg(absolute, signal) : null;
+			const mime = heic ? "image/jpeg" : await detectSupportedImageMimeTypeFromFile(absolute);
+			const buffer = heic ?? await fs.readFile(absolute, { signal });
 			if (mime) {
 				const processed = await processImage(buffer, mime, { resizeOptions: model?.inputLimits?.images?.resize });
 				signal?.throwIfAborted();

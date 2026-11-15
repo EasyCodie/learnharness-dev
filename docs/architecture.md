@@ -184,7 +184,7 @@ API environment values override saved keys. Packaged subscription refresh creden
 
 ### File access and external services
 
-Read-only file tools default to the server user's home, not a selected project or app data root. Walk exclusions reduce noise; they are not access authority. Session attachments carry local paths rather than uploads.
+Read-only file tools default to the server user's home, not a selected project or app data root. Walk exclusions reduce noise; they are not access authority. Session attachments carry local paths rather than uploads. The exception is a picture attached to the chat composer or a question/practice dock (paperclip, drop or paste): `POST /api/images/prepare` converts HEIC (macOS `sips`) and normalizes it at attach time, the browser holds it in memory ([`pending-images.tsx`](../components/pending-images.tsx)) and it is submitted as native image data through the submission image channels, so the source file is not needed afterwards.
 
 The **sensitive-path guard** refuses known private home locations, `.env` files, configured auth/subscription files, and recognized credential temporary files. It checks named/canonical paths and aliases; walks skip protected locations. It is path-based defense in depth, not a content scanner, sandbox, or allowed-folders setting. Other sensitive files and learning records can remain readable. See [`fs-shared.ts`](../src/agent/tools/fs-shared.ts).
 

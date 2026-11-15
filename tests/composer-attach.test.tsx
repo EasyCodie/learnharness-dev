@@ -15,12 +15,13 @@ import { Composer } from "../components/composer.tsx";
 import { attachmentPopupPlacement, pathsForFiles } from "../components/attach-files-button.tsx";
 import { restorePathSelection } from "../components/path-input-dom.ts";
 import { quoteFilePath } from "../src/core/file-paths.ts";
+import { takePendingImages } from "../components/pending-images.tsx";
 import { InteractionLayersProvider, useInteractionLayers, type InteractionLayersController } from "../components/interaction-layers.tsx";
 
 let cleanup: (() => Promise<void>) | undefined;
 afterEach(async () => { await cleanup?.(); cleanup = undefined; });
 
-async function fixture({ desktop = true } = {}) {
+async function fixture({ desktop = true, imageField }: { desktop?: boolean; imageField?: string } = {}) {
 	const { window: win, document: doc } = parseHTML("<html><body><div id='root'></div></body></html>");
 	let active: Element = doc.body;
 	Object.defineProperty(doc, "activeElement", { get: () => active });
@@ -60,7 +61,7 @@ async function fixture({ desktop = true } = {}) {
 	let controller!: InteractionLayersController;
 	function Harness() {
 		controller = useInteractionLayers();
-		return <div data-testid="clipping-dock" data-attachment-composer="" style={{ overflow: "hidden" }}><Composer busy={false} value={value} onChange={(next) => { value = next; draw(); }} onSend={() => { sends++; }} onStop={() => {}} canSend /></div>;
+		return <div data-testid="clipping-dock" data-attachment-composer="" style={{ overflow: "hidden" }}><Composer busy={false} value={value} onChange={(next) => { value = next; draw(); }} onSend={() => { sends++; }} onStop={() => {}} canSend imageField={imageField} /></div>;
 	}
 	function draw() { root.render(<InteractionLayersProvider><Harness /></InteractionLayersProvider>); }
 	await act(async () => { draw(); });
@@ -111,6 +112,14 @@ async function fixture({ desktop = true } = {}) {
 			await act(async () => { picker.dispatchEvent(new win.Event("change", { bubbles: true })); });
 		},
 	};
+}
+
+
+/** The prepare route, stubbed: records each uploaded picture. */
+function stubImageUpload() {
+	const real = globalThis.fetch, uploaded: File[] = [];
+	globalThis.fetch = (async (_url: string, init: { body: File }) => { uploaded.push(init.body); return Response.json({ data: "AAAA", mimeType: "image/png" }); }) as never;
+	return { uploaded, restore() { globalThis.fetch = real; } };
 }
 
 describe("attachment popup placement", () => {
@@ -197,6 +206,21 @@ describe("composer attach button", () => {
 		await f.pick([f.file("week 3.pdf", paths[0]), f.file("board.jpg", paths[1]), f.file("virtual.pdf")]);
 		assert.equal(f.value, `read ${paths.map(quoteFilePath).join(" ")} this`);
 		assert.equal(f.byteReads, 0, "paths only — file contents are never read");
+	});
+
+	it("in an image field, picked pictures upload as real images and only the other files become path chips", async () => {
+		const upload = stubImageUpload();
+		try {
+			const f = await fixture({ imageField: "text:test-picker" });
+			f.caret(4);
+			const photo = new File(["photo bytes"], "IMG_0042.HEIC");
+			await f.pick([photo, f.file("week 3.pdf", "/course/week 3.pdf")]);
+			await act(async () => { await takePendingImages("text:test-picker"); });
+			assert.equal(f.value, `read ${quoteFilePath("/course/week 3.pdf")} this`, "the picture leaves no path behind");
+			assert.deepEqual(upload.uploaded, [photo], "its bytes are captured at pick time");
+			assert.equal(f.doc.querySelector('[data-testid="pending-images"] img')?.getAttribute("alt"), "IMG_0042.HEIC");
+			assert.equal(f.byteReads, 0, "the non-image file is still never read");
+		} finally { upload.restore(); }
 	});
 
 	it("Folder inserts exactly one directory path (including empty folders) at the saved caret, without file selection or submits", async () => {

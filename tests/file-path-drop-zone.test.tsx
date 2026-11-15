@@ -9,6 +9,7 @@ import { PathInput } from "../components/path-input.tsx";
 import { readPathInput, restorePathSelection } from "../components/path-input-dom.ts";
 import { quoteFilePath } from "../src/core/file-paths.ts";
 
+import { takePendingImages } from "../components/pending-images.tsx";
 let cleanup: (() => Promise<void>) | undefined;
 afterEach(async () => { await cleanup?.(); cleanup = undefined; });
 
@@ -130,6 +131,31 @@ test("desktop drop inserts quoted paths at the focused editor caret instead of t
 	assert.deepEqual(f.resolved, files, "only Electron's full path, never File.name, enters the draft");
 	assert.equal(f.status, "", "successful file attachment is silent");
 	f.assertPathOnly();
+});
+
+
+/** The prepare route, stubbed: records each uploaded picture. */
+function stubImageUpload() {
+	const real = globalThis.fetch, uploaded: File[] = [];
+	globalThis.fetch = (async (_url: string, init: { body: File }) => { uploaded.push(init.body); return Response.json({ data: "AAAA", mimeType: "image/png" }); }) as never;
+	return { uploaded, restore() { globalThis.fetch = real; } };
+}
+
+test("in an image field, a dropped picture uploads as a real image; other files still become paths", async () => {
+	const f = await fixture();
+	const upload = stubImageUpload(); // after the fixture: it installs a no-network guard for path drops
+	try {
+		f.editor.closest("form")!.setAttribute("data-image-field", "thinking:test-drop");
+		f.focusEditor(0);
+		const photo = new File(["photo bytes"], "shelf.png", { type: "image/png" });
+		await f.event("drop", f.transfer([photo, f.file("notes.pdf", "/course/notes.pdf")]));
+		assert.equal(f.value, `${quoteFilePath("/course/notes.pdf")} readthis`, "no path for the picture: a shelf file may be gone after the drop");
+		assert.deepEqual(upload.uploaded, [photo]);
+		assert.equal((await takePendingImages("thinking:test-drop")).length, 1);
+		await f.event("drop", f.transfer([new File(["more"], "second.png", { type: "image/png" })]));
+		assert.equal(f.status, "", "a picture-only drop is a success, not a missing-path notice");
+		assert.equal((await takePendingImages("thinking:test-drop")).length, 2);
+	} finally { upload.restore(); }
 });
 
 test("a successful drop clears an earlier failure without replacing it with a confirmation bubble", async () => {

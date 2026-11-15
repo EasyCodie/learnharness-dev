@@ -1,4 +1,5 @@
 import React, { act } from "react";
+import { takePendingImages } from "../components/pending-images.tsx";
 import assert from "node:assert/strict";
 import { afterEach, mock, test } from "node:test";
 import { parseHTML } from "linkedom";
@@ -464,6 +465,22 @@ test("plaintext paste ignores HTML and copy/cut use full token source in either 
 	assert.equal(f.value, "read <img src=x onerror=alert(1)>\n中 now");
 	assert.equal(f.root.querySelector("img"), null);
 	assert.equal(readPathInput(f.root), f.value);
+});
+
+test("in an image field, a pasted picture uploads as a real image and inserts no text", async () => {
+	const real = globalThis.fetch, uploaded: File[] = [];
+	globalThis.fetch = (async (_url: string, init: { body: File }) => { uploaded.push(init.body); return Response.json({ data: "AAAA", mimeType: "image/png" }); }) as never;
+	try {
+		const f = await fixture("draft");
+		f.root.parentElement!.setAttribute("data-image-field", "thinking:test-paste");
+		f.select(5, 5);
+		const shot = new File(["screenshot bytes"], "image.png", { type: "image/png" });
+		const paste = await f.event("paste", { clipboardData: { types: ["Files"], files: [shot], getData: () => "image.png" } });
+		assert.equal(paste.defaultPrevented, true);
+		assert.equal(f.value, "draft", "the clipboard's file name is not pasted as text");
+		assert.deepEqual(uploaded, [shot]);
+		assert.equal((await takePendingImages("thinking:test-paste")).length, 1);
+	} finally { globalThis.fetch = real; }
 });
 
 test("image/file-only paste prevents native insertion without deleting selected text or chips", async () => {

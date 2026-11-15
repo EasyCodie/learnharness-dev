@@ -5,6 +5,7 @@ import { ArrowRightIcon, CornerDownLeftIcon, SquareIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PathInput } from "@/components/path-input";
 import { AttachFilesButton } from "@/components/attach-files-button";
+import { PendingImages, usePendingImages } from "@/components/pending-images";
 import { MathToggleButton } from "@/components/math-toggle-button";
 import { useOptionalInteractionLayers } from "./interaction-layers";
 import { isInteractionScopeEligible } from "./plugin-input-focus";
@@ -62,6 +63,7 @@ export function ChatSessionComposer({
 	nextProblem,
 	onNext,
 	pendingInput = false,
+	imageField,
 }: {
 	busy: boolean;
 	value: string;
@@ -78,10 +80,12 @@ export function ChatSessionComposer({
 	nextProblem?: boolean;
 	onNext?: () => void;
 	pendingInput?: boolean;
+	imageField?: string;
 }) {
 	const [draft, setDraft] = useState(value);
 	useLayoutEffect(() => { setDraft(value); }, [revision, value]);
-	const canSend = sendAllowed && (draft.trim().length > 0 || dictationActive || pendingInput);
+	const hasImages = usePendingImages(imageField).length > 0;
+	const canSend = sendAllowed && (draft.trim().length > 0 || dictationActive || pendingInput || hasImages);
 	const applyDraft = useCallback((next: string) => {
 		setDraft(next);
 		onChange(next);
@@ -95,6 +99,7 @@ export function ChatSessionComposer({
 			onSend={onSend}
 			onStop={onStop}
 			canSend={canSend}
+			imageField={imageField}
 			autoFocus={autoFocus}
 			inputRef={inputRef}
 			onEscape={onEscape}
@@ -120,6 +125,7 @@ export function Composer({
 	onNext,
 	defaultDropTarget = true,
 	fileInsertion = true,
+	imageField,
 }: {
 	busy: boolean;
 	value: string;
@@ -148,6 +154,8 @@ export function Composer({
 	/** Neutral plugin composers opt out without changing core defaults. */
 	defaultDropTarget?: boolean;
 	fileInsertion?: boolean;
+	/** Pictures attached here are sent as real images with the message. */
+	imageField?: string;
 }) {
 	const controller = useOptionalInteractionLayers();
 	const act = () => {
@@ -162,12 +170,14 @@ export function Composer({
 		<form
 			data-testid="composer"
 			data-math-keyboard-anchor=""
-			className="flex items-end gap-1.5 p-1.5"
+			data-image-field={imageField}
+			className="flex flex-wrap items-end gap-1.5 p-1.5"
 			onSubmit={(e) => {
 				e.preventDefault();
 				act();
 			}}
 		>
+			<PendingImages field={imageField} className="w-full px-1 pb-0 pt-1" />
 			<PathInput
 				ref={editorRef}
 				value={value}

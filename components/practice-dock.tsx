@@ -6,6 +6,8 @@ import { ChevronRightIcon } from "lucide-react";
 import { ToolContentResponse } from "@/components/ai-elements/message";
 import { Button } from "@/components/ui/button";
 import { MathToggleButton } from "@/components/math-toggle-button";
+import { AttachFilesButton } from "@/components/attach-files-button";
+import { PendingImages, usePendingImages } from "@/components/pending-images";
 import { joinDictation, useDictationTarget } from "@/components/dictation";
 import { useEnterSubmits } from "@/components/enter-submits";
 import { useOptionalInteractionLayers } from "./interaction-layers";
@@ -85,6 +87,9 @@ export function PracticeDock({ viewReader, problemCallId, input, expanded, onExp
 		return () => { if (viewReader.current === read) viewReader.current = null; };
 	}, [viewReader]);
 	const fieldRef = useRef<HTMLDivElement>(null);
+	// Plugin problems own their submission; only the native thinking takes pictures.
+	const imageField = customInput ? undefined : `thinking:${problemCallId}`;
+	const hasImages = usePendingImages(imageField).length > 0;
 
 	useDictationTarget(
 		useCallback(
@@ -103,7 +108,7 @@ export function PracticeDock({ viewReader, problemCallId, input, expanded, onExp
 		if (compactionRunning || preparing) return;
 		const prepare = customInput?.prepare ?? onPrepareSubmission;
 		if (prepare) {
-			if (customInput ? !customInput.ready : (!thinkingRef.current.trim() && !hasPendingInput)) return;
+			if (customInput ? !customInput.ready : (!thinkingRef.current.trim() && !hasPendingInput && !hasImages)) return;
 			let capturedRevision = editRevision.current;
 			prepare(() => { capturedRevision = editRevision.current; return customInput ? thinkingRef.current : thinkingRef.current.trim(); }, captured => {
 				if (editRevision.current === capturedRevision && (customInput ? thinkingRef.current : thinkingRef.current.trim()) === captured) { thinkingRef.current = ""; setThinking(""); }
@@ -161,6 +166,8 @@ export function PracticeDock({ viewReader, problemCallId, input, expanded, onExp
 			    Shift+Enter makes a newline — less to decide about. */}
 			<div
 				data-testid="practice-thinking-field"
+				data-attachment-composer="" // the attach menu opens above this field, not the whole dock
+				data-image-field={imageField}
 				className="m-1.5 rounded-[10px] border border-border/70 bg-background/60 transition-colors focus-within:border-primary/50"
 			>
 				<div className="px-2.5 pt-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -196,19 +203,19 @@ export function PracticeDock({ viewReader, problemCallId, input, expanded, onExp
 						"field-sizing-content lh-input max-h-64 min-h-16 w-full resize-none bg-transparent px-2.5 pb-2 outline-none placeholder:text-muted-foreground",
 					)}
 				/>
+				<PendingImages field={imageField} />
 				{/* The submit row (owner round 4, 2026-10-05): IDENTICAL to the
 				    question dock's — hint left, the SAME Button (h-9, px-3.5),
 				    one p-1 row. Corner radii concentric: shell 16 − m-1.5 (6) =
 				    field 10 − p-1 (4) = button 6. */}
 				<div className="flex items-center justify-between gap-2 p-1">
-					<span aria-hidden className="pl-1.5 text-xs text-muted-foreground">
-						{compactionRunning ? "compacting session…" : "↵ submits · ⇧↵ newline"}
-					</span>
+					{compactionRunning && <span aria-hidden className="pl-1.5 text-xs text-muted-foreground">compacting session…</span>}
 					<MathToggleButton editorRef={fieldRef} className="ml-auto size-9 rounded-[6px]" />
+					<AttachFilesButton editorRef={fieldRef} className="size-9 rounded-[6px]" />
 					<Button
 						type="button"
 						data-testid="practice-send"
-						disabled={(customInput ? !customInput.ready : (!thinking.trim() && !hasPendingInput)) || compactionRunning || preparing}
+						disabled={(customInput ? !customInput.ready : (!thinking.trim() && !hasPendingInput && !hasImages)) || compactionRunning || preparing}
 						onClick={() => submit()}
 						className="h-9 rounded-[6px] px-3.5 text-sm font-medium"
 					>
